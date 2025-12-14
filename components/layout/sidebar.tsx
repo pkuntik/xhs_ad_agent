@@ -10,6 +10,7 @@ import {
   MessageSquare,
   BarChart3,
   Settings,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -18,6 +19,11 @@ const navItems = [
     title: '仪表盘',
     href: '/',
     icon: LayoutDashboard,
+  },
+  {
+    title: 'AI 创作',
+    href: '/creation',
+    icon: Sparkles,
   },
   {
     title: '账号管理',

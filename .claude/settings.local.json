@@ -4,7 +4,11 @@
       "Bash(dir:*)",
       "Bash(tree:*)",
       "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\page.tsx\")",
-      "Bash(npx tsc --noEmit)"
+      "Bash(npx tsc --noEmit)",
+      "Bash(cat:*)",
+      "Bash(npx shadcn@latest add checkbox select -y)",
+      "Bash(move \"e:\\2025\\xhs_ad_agent\\小红书图文内容生成器.md\" \"e:\\2025\\xhs_ad_agent\\prompts\"\")",
+      "Bash(move:*)"
     ]
   }
 }
