@@ -1,4 +1,5 @@
-import { xhsRequest } from './client'
+import { getAccountInfo } from './api/account'
+import { CookieInvalidError } from './client'
 
 export interface CookieValidation {
   valid: boolean
@@ -6,52 +7,47 @@ export interface CookieValidation {
   advertiserId?: string
   balance?: number
   nickname?: string
-  expireAt?: Date
+  avatar?: string
+  errorMessage?: string
 }
 
 /**
  * 验证 Cookie 有效性
- *
- * TODO: 根据抓包数据实现具体逻辑
- * 预期调用接口获取账号信息，验证 Cookie 是否有效
+ * 通过调用小红书聚光平台 API 验证
  */
 export async function validateCookie(cookie: string): Promise<CookieValidation> {
+  // 基本格式检查
+  if (!cookie || cookie.length < 10) {
+    return { valid: false, errorMessage: 'Cookie 格式无效' }
+  }
+
+  const hasRequiredFields = hasRequiredCookieFields(cookie)
+  if (!hasRequiredFields) {
+    return { valid: false, errorMessage: 'Cookie 缺少必要字段' }
+  }
+
   try {
-    // TODO: 替换为实际的验证接口
-    // 预期接口：获取当前登录用户信息
-    // const data = await xhsRequest({
-    //   cookie,
-    //   path: '/api/gw/advertiser/account/info',
-    // })
-    //
-    // return {
-    //   valid: true,
-    //   userId: data.userId,
-    //   advertiserId: data.advertiserId,
-    //   balance: data.balance,
-    //   nickname: data.nickname,
-    // }
+    // 调用实际 API 验证 Cookie
+    const info = await getAccountInfo({ cookie })
 
-    // 临时实现：仅检查 Cookie 格式
-    if (!cookie || cookie.length < 10) {
-      return { valid: false }
-    }
-
-    const hasRequiredFields = hasRequiredCookieFields(cookie)
-    if (!hasRequiredFields) {
-      return { valid: false }
-    }
-
-    // TODO: 实际验证需要调用接口
     return {
       valid: true,
-      userId: 'pending',
-      advertiserId: 'pending',
-      balance: 0,
+      userId: info.userId,
+      advertiserId: info.advertiserId,
+      balance: info.balance,
+      nickname: info.nickname,
+      avatar: info.avatar,
     }
   } catch (error) {
+    if (error instanceof CookieInvalidError) {
+      return { valid: false, errorMessage: 'Cookie 已失效，请重新登录' }
+    }
+
     console.error('Cookie 验证失败:', error)
-    return { valid: false }
+    return {
+      valid: false,
+      errorMessage: error instanceof Error ? error.message : '验证失败'
+    }
   }
 }
 

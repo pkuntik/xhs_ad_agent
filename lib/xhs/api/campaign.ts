@@ -1,6 +1,46 @@
 import { xhsRequest } from '../client'
 import type { CampaignTargeting } from '@/types/campaign'
 
+// ============ 类型定义 ============
+
+export interface XhsCampaign {
+  campaignId: string
+  campaignName: string
+  status: number
+  budget: number
+  createTime: number
+}
+
+export interface XhsUnit {
+  unitId: string
+  unitName: string
+  campaignId: string
+  status: number
+  bidAmount: number
+}
+
+export interface XhsCreative {
+  creativeId: string
+  unitId: string
+  noteId: string
+  status: number
+}
+
+export interface CampaignListResponse {
+  list: XhsCampaign[]
+  total: number
+}
+
+export interface UnitListResponse {
+  list: XhsUnit[]
+  total: number
+}
+
+export interface CreativeListResponse {
+  list: XhsCreative[]
+  total: number
+}
+
 export interface CreateCampaignParams {
   cookie: string
   advertiserId: string
@@ -17,180 +57,155 @@ export interface CreateCampaignResult {
   creativeId?: string     // 创意 ID
 }
 
+// ============ 已实现的 API 接口 ============
+
 /**
- * 创建投放计划
- *
- * TODO: 根据抓包数据实现
- * 预期流程：
- * 1. 创建计划 (Campaign)
- * 2. 创建单元 (Unit/AdGroup)
- * 3. 绑定创意 (Creative/笔记)
+ * 获取计划列表
+ * POST /api/leona/campaign/list
  */
-export async function createCampaign(
-  params: CreateCampaignParams
-): Promise<CreateCampaignResult> {
-  const { cookie, advertiserId, noteId, budget, bidAmount, targeting } = params
+export async function getCampaignList(params: {
+  cookie: string
+  advertiserId?: string
+  page?: number
+  pageSize?: number
+}): Promise<CampaignListResponse> {
+  const { cookie, page = 1, pageSize = 20 } = params
 
-  // TODO: 替换为实际接口
-  // Step 1: 创建计划
-  // const campaignData = await xhsRequest({
-  //   cookie,
-  //   method: 'POST',
-  //   path: '/api/gw/advertiser/campaign/create',
-  //   body: {
-  //     advertiserId,
-  //     name: `自动投放计划_${Date.now()}`,
-  //     objective: 'LEAD_COLLECTION',
-  //     dailyBudget: budget * 100, // 元转分
-  //     status: 'ACTIVE',
-  //   },
-  // })
-  //
-  // Step 2: 创建单元
-  // const unitData = await xhsRequest({
-  //   cookie,
-  //   method: 'POST',
-  //   path: '/api/gw/advertiser/unit/create',
-  //   body: {
-  //     campaignId: campaignData.campaignId,
-  //     name: `自动投放单元_${Date.now()}`,
-  //     bidAmount: bidAmount * 100,
-  //     bidStrategy: 'OCPM',
-  //     targeting: targeting || {},
-  //   },
-  // })
-  //
-  // Step 3: 绑定创意
-  // await xhsRequest({
-  //   cookie,
-  //   method: 'POST',
-  //   path: '/api/gw/advertiser/creative/bind',
-  //   body: {
-  //     unitId: unitData.unitId,
-  //     noteId,
-  //     creativeType: 'NOTE',
-  //   },
-  // })
-  //
-  // return {
-  //   campaignId: campaignData.campaignId,
-  //   unitId: unitData.unitId,
-  // }
-
-  throw new Error('createCampaign: 接口待实现，请提供抓包数据')
+  return xhsRequest<CampaignListResponse>({
+    cookie,
+    method: 'POST',
+    path: '/api/leona/campaign/list',
+    body: {
+      pageNum: page,
+      pageSize: pageSize,
+    },
+  })
 }
 
 /**
- * 暂停投放计划
- *
- * TODO: 根据抓包数据实现
+ * 获取单元列表
+ * POST /api/leona/unit/list
  */
-export async function pauseCampaign(params: {
+export async function getUnitList(params: {
   cookie: string
   campaignId: string
-}): Promise<void> {
-  // TODO: 替换为实际接口
-  // await xhsRequest({
-  //   cookie: params.cookie,
-  //   method: 'POST',
-  //   path: '/api/gw/advertiser/campaign/status/update',
-  //   body: {
-  //     campaignId: params.campaignId,
-  //     status: 'PAUSED',
-  //   },
-  // })
+  page?: number
+  pageSize?: number
+}): Promise<UnitListResponse> {
+  const { cookie, campaignId, page = 1, pageSize = 20 } = params
 
-  throw new Error('pauseCampaign: 接口待实现，请提供抓包数据')
+  return xhsRequest<UnitListResponse>({
+    cookie,
+    method: 'POST',
+    path: '/api/leona/unit/list',
+    body: {
+      campaignId,
+      pageNum: page,
+      pageSize: pageSize,
+    },
+  })
 }
 
 /**
- * 恢复投放计划
- *
- * TODO: 根据抓包数据实现
+ * 获取创意列表
+ * POST /api/leona/creative/list
  */
-export async function resumeCampaign(params: {
-  cookie: string
-  campaignId: string
-}): Promise<void> {
-  // TODO: 替换为实际接口
-  // await xhsRequest({
-  //   cookie: params.cookie,
-  //   method: 'POST',
-  //   path: '/api/gw/advertiser/campaign/status/update',
-  //   body: {
-  //     campaignId: params.campaignId,
-  //     status: 'ACTIVE',
-  //   },
-  // })
-
-  throw new Error('resumeCampaign: 接口待实现，请提供抓包数据')
-}
-
-/**
- * 更新投放预算
- *
- * TODO: 根据抓包数据实现
- */
-export async function updateBudget(params: {
-  cookie: string
-  campaignId: string
-  budget: number  // 元
-}): Promise<void> {
-  // TODO: 替换为实际接口
-  // await xhsRequest({
-  //   cookie: params.cookie,
-  //   method: 'POST',
-  //   path: '/api/gw/advertiser/campaign/budget/update',
-  //   body: {
-  //     campaignId: params.campaignId,
-  //     dailyBudget: params.budget * 100,
-  //   },
-  // })
-
-  throw new Error('updateBudget: 接口待实现，请提供抓包数据')
-}
-
-/**
- * 更新出价
- *
- * TODO: 根据抓包数据实现
- */
-export async function updateBid(params: {
+export async function getCreativeList(params: {
   cookie: string
   unitId: string
-  bidAmount: number  // 元
-}): Promise<void> {
-  // TODO: 替换为实际接口
+  page?: number
+  pageSize?: number
+}): Promise<CreativeListResponse> {
+  const { cookie, unitId, page = 1, pageSize = 20 } = params
 
-  throw new Error('updateBid: 接口待实现，请提供抓包数据')
+  return xhsRequest<CreativeListResponse>({
+    cookie,
+    method: 'POST',
+    path: '/api/leona/creative/list',
+    body: {
+      unitId,
+      pageNum: page,
+      pageSize: pageSize,
+    },
+  })
 }
 
 /**
  * 获取计划详情
- *
- * TODO: 根据抓包数据实现
  */
 export async function getCampaignDetail(params: {
   cookie: string
   campaignId: string
-}): Promise<unknown> {
-  // TODO: 替换为实际接口
+}): Promise<XhsCampaign | null> {
+  const { cookie, campaignId } = params
+  const result = await getCampaignList({ cookie, pageSize: 100 })
+  return result.list.find(c => c.campaignId === campaignId) || null
+}
 
-  throw new Error('getCampaignDetail: 接口待实现，请提供抓包数据')
+// ============ 待实现的接口（需要抓包） ============
+
+/**
+ * 创建投放计划
+ * TODO: 需要抓包确认接口路径和参数
+ * 可能的流程：
+ * 1. POST /api/leona/campaign/create
+ * 2. POST /api/leona/unit/create
+ * 3. POST /api/leona/creative/create
+ */
+export async function createCampaign(
+  _params: CreateCampaignParams
+): Promise<CreateCampaignResult> {
+  // TODO: 需要抓包确认创建投放计划的接口
+  // 可能的流程：
+  // 1. POST /api/leona/campaign/create - 创建计划
+  // 2. POST /api/leona/unit/create - 创建单元
+  // 3. POST /api/leona/creative/create - 创建创意
+  throw new Error('createCampaign: 需要抓包创建投放计划的接口')
 }
 
 /**
- * 获取计划列表
- *
- * TODO: 根据抓包数据实现
+ * 暂停投放计划
+ * TODO: 需要抓包确认接口
+ * 可能是 POST /api/leona/campaign/update 或 /api/leona/campaign/status
  */
-export async function getCampaignList(params: {
+export async function pauseCampaign(_params: {
   cookie: string
-  advertiserId: string
-  page?: number
-  pageSize?: number
-}): Promise<unknown[]> {
-  // TODO: 替换为实际接口
+  campaignId: string
+}): Promise<void> {
+  throw new Error('pauseCampaign: 需要抓包暂停计划的接口')
+}
 
-  throw new Error('getCampaignList: 接口待实现，请提供抓包数据')
+/**
+ * 恢复投放计划
+ * TODO: 需要抓包确认接口
+ */
+export async function resumeCampaign(_params: {
+  cookie: string
+  campaignId: string
+}): Promise<void> {
+  throw new Error('resumeCampaign: 需要抓包恢复计划的接口')
+}
+
+/**
+ * 更新投放预算
+ * TODO: 需要抓包确认接口
+ */
+export async function updateBudget(_params: {
+  cookie: string
+  campaignId: string
+  budget: number  // 元
+}): Promise<void> {
+  throw new Error('updateBudget: 需要抓包更新预算的接口')
+}
+
+/**
+ * 更新出价
+ * TODO: 需要抓包确认接口
+ */
+export async function updateBid(_params: {
+  cookie: string
+  unitId: string
+  bidAmount: number  // 元
+}): Promise<void> {
+  throw new Error('updateBid: 需要抓包更新出价的接口')
 }

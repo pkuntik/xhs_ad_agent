@@ -3,7 +3,8 @@
     "allow": [
       "Bash(dir:*)",
       "Bash(tree:*)",
-      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\page.tsx\")"
+      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\page.tsx\")",
+      "Bash(npx tsc --noEmit)"
     ]
   }
 }

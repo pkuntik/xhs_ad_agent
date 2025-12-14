@@ -1,6 +1,6 @@
 'use server'
 
-import { ObjectId } from 'mongodb'
+import { ObjectId, type Db } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { decryptCookie } from '@/lib/utils/crypto'
 import { campaignApi, reportApi } from '@/lib/xhs'
@@ -322,7 +322,7 @@ export async function checkAndDecide(
 /**
  * 安排下次检查
  */
-async function scheduleNextCheck(db: any, campaignId: string, minutesLater: number) {
+async function scheduleNextCheck(db: Db, campaignId: string, minutesLater: number) {
   const campaign = await db
     .collection<Campaign>(COLLECTIONS.CAMPAIGNS)
     .findOne({ _id: new ObjectId(campaignId) })
