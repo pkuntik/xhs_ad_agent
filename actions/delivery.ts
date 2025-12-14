@@ -34,6 +34,12 @@ export async function startDelivery(
     if (!work) {
       return { success: false, error: '作品不存在' }
     }
+    if (!work.noteId) {
+      return { success: false, error: '作品未发布，请先发布到小红书' }
+    }
+    if (!work.accountId) {
+      return { success: false, error: '作品未绑定账号' }
+    }
 
     // 获取账号信息
     const account = await db

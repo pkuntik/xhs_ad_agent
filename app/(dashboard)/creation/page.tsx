@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -13,8 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Sparkles, Copy, Check } from 'lucide-react'
+import { Loader2, Sparkles, Copy, Check, Save, Edit2 } from 'lucide-react'
 import { generateContent } from '@/actions/creation'
+import { saveWork } from '@/actions/work'
 import type {
   CreationFormData,
   GenerationResult,
@@ -40,6 +43,7 @@ const CONTENT_SCENES: ContentScene[] = [
 ]
 
 export default function CreationPage() {
+  const router = useRouter()
   const [formData, setFormData] = useState<CreationFormData>({
     promotionGoal: '私信咨询量',
     topic: '',
@@ -61,6 +65,13 @@ export default function CreationPage() {
   const [rawText, setRawText] = useState('')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  // 编辑状态的内容
+  const [editedTitle, setEditedTitle] = useState('')
+  const [editedContent, setEditedContent] = useState('')
+  const [editedTopics, setEditedTopics] = useState('')
 
   async function handleGenerate() {
     if (!formData.topic.trim()) {
@@ -72,6 +83,7 @@ export default function CreationPage() {
     setError('')
     setResult(null)
     setRawText('')
+    setIsEditing(false)
 
     try {
       const response = await generateContent(formData)
@@ -87,11 +99,64 @@ export default function CreationPage() {
 
       if (response.result) {
         setResult(response.result)
+        // 初始化编辑内容
+        setEditedTitle(response.result.title?.text || '')
+        setEditedContent(response.result.content?.body || '')
+        setEditedTopics(response.result.topics?.tags.join(' ') || '')
       }
     } catch (err: any) {
       setError(err.message || '生成失败，请重试')
     } finally {
       setLoading(false)
+    }
+  }
+
+  function startEditing() {
+    if (result) {
+      setEditedTitle(result.title?.text || '')
+      setEditedContent(result.content?.body || '')
+      setEditedTopics(result.topics?.tags.join(' ') || '')
+      setIsEditing(true)
+    }
+  }
+
+  function cancelEditing() {
+    setIsEditing(false)
+  }
+
+  async function handleSave() {
+    if (!result) return
+
+    setSaving(true)
+    setError('')
+
+    try {
+      // 构建更新后的结果
+      const updatedResult: GenerationResult = {
+        ...result,
+        title: result.title ? { ...result.title, text: editedTitle } : undefined,
+        content: result.content ? { ...result.content, body: editedContent } : undefined,
+        topics: result.topics ? { ...result.topics, tags: editedTopics.split(/\s+/).filter(Boolean) } : undefined,
+      }
+
+      const response = await saveWork({
+        title: editedTitle || result.title?.text || '未命名作品',
+        content: editedContent || result.content?.body,
+        tags: editedTopics.split(/\s+/).filter(Boolean),
+        draftContent: updatedResult,
+      })
+
+      if (!response.success) {
+        setError(response.error || '保存失败')
+        return
+      }
+
+      // 保存成功，跳转到作品详情页
+      router.push(`/works/${response.id}`)
+    } catch (err: any) {
+      setError(err.message || '保存失败，请重试')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -248,27 +313,90 @@ export default function CreationPage() {
 
           {!loading && result && (
             <>
+              {/* 操作按钮栏 */}
+              <Card>
+                <CardContent className="py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      {isEditing ? '编辑模式' : '预览模式'}
+                    </span>
+                    <div className="flex gap-2">
+                      {isEditing ? (
+                        <>
+                          <Button variant="outline" size="sm" onClick={cancelEditing}>
+                            取消
+                          </Button>
+                          <Button size="sm" onClick={handleSave} disabled={saving}>
+                            {saving ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                保存中...
+                              </>
+                            ) : (
+                              <>
+                                <Save className="mr-2 h-4 w-4" />
+                                保存到作品中心
+                              </>
+                            )}
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button variant="outline" size="sm" onClick={startEditing}>
+                            <Edit2 className="mr-2 h-4 w-4" />
+                            编辑
+                          </Button>
+                          <Button size="sm" onClick={handleSave} disabled={saving}>
+                            {saving ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                保存中...
+                              </>
+                            ) : (
+                              <>
+                                <Save className="mr-2 h-4 w-4" />
+                                保存到作品中心
+                              </>
+                            )}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* 标题 */}
               {result.title && (
                 <Card>
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-base">标题</CardTitle>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleCopy(result.title!.text, 'title')}
-                      >
-                        {copied === 'title' ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
+                      {!isEditing && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCopy(editedTitle || result.title!.text, 'title')}
+                        >
+                          {copied === 'title' ? (
+                            <Check className="h-4 w-4" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <p className="font-medium">{result.title.text}</p>
+                    {isEditing ? (
+                      <Input
+                        value={editedTitle}
+                        onChange={(e) => setEditedTitle(e.target.value)}
+                        placeholder="输入标题"
+                      />
+                    ) : (
+                      <p className="font-medium">{editedTitle || result.title.text}</p>
+                    )}
                   </CardContent>
                 </Card>
               )}
@@ -279,25 +407,36 @@ export default function CreationPage() {
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-base">
-                        正文 ({result.content.wordCount} 字)
+                        正文 ({(editedContent || result.content.body).length} 字)
                       </CardTitle>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleCopy(result.content!.body, 'content')}
-                      >
-                        {copied === 'content' ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
+                      {!isEditing && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCopy(editedContent || result.content!.body, 'content')}
+                        >
+                          {copied === 'content' ? (
+                            <Check className="h-4 w-4" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="whitespace-pre-wrap text-sm">
-                      {result.content.body}
-                    </div>
+                    {isEditing ? (
+                      <Textarea
+                        value={editedContent}
+                        onChange={(e) => setEditedContent(e.target.value)}
+                        placeholder="输入正文内容"
+                        rows={10}
+                      />
+                    ) : (
+                      <div className="whitespace-pre-wrap text-sm">
+                        {editedContent || result.content.body}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}
@@ -308,30 +447,40 @@ export default function CreationPage() {
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-base">话题标签</CardTitle>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleCopy(result.topics!.tags.join(' '), 'topics')}
-                      >
-                        {copied === 'topics' ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
+                      {!isEditing && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCopy(editedTopics || result.topics!.tags.join(' '), 'topics')}
+                        >
+                          {copied === 'topics' ? (
+                            <Check className="h-4 w-4" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="flex flex-wrap gap-2">
-                      {result.topics.tags.map((tag, i) => (
-                        <span
-                          key={i}
-                          className="px-2 py-1 bg-primary/10 text-primary rounded-full text-sm"
-                        >
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
+                    {isEditing ? (
+                      <Input
+                        value={editedTopics}
+                        onChange={(e) => setEditedTopics(e.target.value)}
+                        placeholder="输入话题标签，空格分隔"
+                      />
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {(editedTopics || result.topics.tags.join(' ')).split(/\s+/).filter(Boolean).map((tag, i) => (
+                          <span
+                            key={i}
+                            className="px-2 py-1 bg-primary/10 text-primary rounded-full text-sm"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}

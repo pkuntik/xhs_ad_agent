@@ -10,7 +10,8 @@ export default async function WorksPage() {
   const works = await getWorks()
 
   const statusMap = {
-    draft: { label: '草稿', variant: 'secondary' as const },
+    unused: { label: '未使用', variant: 'secondary' as const },
+    scanned: { label: '已扫码', variant: 'outline' as const },
     published: { label: '已发布', variant: 'success' as const },
     promoting: { label: '投放中', variant: 'default' as const },
     paused: { label: '已暂停', variant: 'warning' as const },
@@ -50,7 +51,7 @@ export default async function WorksPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {works.map((work) => {
-            const status = statusMap[work.status] || statusMap.draft
+            const status = statusMap[work.status] || statusMap.unused
 
             return (
               <Link key={work._id.toString()} href={`/works/${work._id}`}>
@@ -63,8 +64,8 @@ export default async function WorksPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">
-                        笔记ID: {work.noteId}
+                      <p className="text-sm text-muted-foreground line-clamp-1">
+                        {work.noteId ? `笔记ID: ${work.noteId}` : `发布码: ${work.publishCode}`}
                       </p>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>

@@ -2,8 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { ObjectId } from 'mongodb'
+import { nanoid } from 'nanoid'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
-import type { Work, CreateWorkInput, WorkStatus } from '@/types/work'
+import { generateVerifyConfig } from '@/lib/xhs/signature'
+import type { Work, CreateWorkInput, WorkStatus, BindNoteInput } from '@/types/work'
+import type { GenerationResult } from '@/types/creation'
 
 /**
  * 获取作品列表
@@ -35,10 +38,55 @@ export async function getWorkById(id: string): Promise<Work | null> {
 }
 
 /**
- * 绑定作品（手动发布后，输入笔记 ID 绑定）
+ * 保存 AI 生成的内容为作品
+ */
+export async function saveWork(
+  input: CreateWorkInput
+): Promise<{ success: boolean; error?: string; id?: string; publishCode?: string }> {
+  try {
+    const { title, content, coverUrl, type = 'image', tags = [], draftContent } = input
+
+    const db = await getDb()
+
+    // 生成唯一发布码
+    const publishCode = nanoid(10)
+
+    const work: Omit<Work, '_id'> = {
+      title,
+      content,
+      coverUrl,
+      type,
+      draftContent,
+      publishCode,
+      publishCodeCreatedAt: new Date(),
+      status: 'unused',
+      totalSpent: 0,
+      totalImpressions: 0,
+      totalClicks: 0,
+      totalLeads: 0,
+      avgCostPerLead: 0,
+      performanceScore: 50,
+      consecutiveFailures: 0,
+      tags,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    const result = await db.collection(COLLECTIONS.WORKS).insertOne(work)
+
+    revalidatePath('/works')
+    return { success: true, id: result.insertedId.toString(), publishCode }
+  } catch (error) {
+    console.error('保存作品失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
+ * 绑定作品（手动发布后，输入笔记 ID 绑定）- 旧版兼容
  */
 export async function createWork(
-  input: CreateWorkInput
+  input: CreateWorkInput & { accountId: string; noteId: string }
 ): Promise<{ success: boolean; error?: string; id?: string }> {
   try {
     const { accountId, noteId, title, content, coverUrl, type = 'image', tags = [] } = input
@@ -60,6 +108,9 @@ export async function createWork(
       content,
       coverUrl,
       type,
+      publishCode: nanoid(10),
+      publishCodeCreatedAt: new Date(),
+      publishCodePublishedAt: new Date(),
       status: 'published',
       totalSpent: 0,
       totalImpressions: 0,
@@ -265,4 +316,146 @@ export async function getNextBestWork(
     })
 
   return work
+}
+
+// ============ 发布码相关功能 ============
+
+/**
+ * 根据发布码获取作品
+ */
+export async function getWorkByPublishCode(code: string): Promise<Work | null> {
+  const db = await getDb()
+  const work = await db
+    .collection<Work>(COLLECTIONS.WORKS)
+    .findOne({ publishCode: code })
+
+  return work
+}
+
+/**
+ * 获取发布配置（用于 H5 页面调用小红书 SDK）
+ */
+export async function getPublishConfig(code: string): Promise<{
+  success: boolean
+  error?: string
+  work?: Work
+  verifyConfig?: ReturnType<typeof generateVerifyConfig>
+}> {
+  try {
+    const work = await getWorkByPublishCode(code)
+    if (!work) {
+      return { success: false, error: '作品不存在' }
+    }
+
+    // 生成签名配置
+    const verifyConfig = generateVerifyConfig()
+
+    return { success: true, work, verifyConfig }
+  } catch (error) {
+    console.error('获取发布配置失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
+ * 标记作品已扫码
+ */
+export async function markWorkScanned(code: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDb()
+
+    const result = await db.collection(COLLECTIONS.WORKS).updateOne(
+      { publishCode: code, status: 'unused' },
+      {
+        $set: {
+          status: 'scanned',
+          publishCodeScannedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    if (result.matchedCount === 0) {
+      // 可能已经扫过了，不报错
+      return { success: true }
+    }
+
+    revalidatePath('/works')
+    return { success: true }
+  } catch (error) {
+    console.error('标记作品已扫码失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
+ * 绑定已发布的笔记链接
+ */
+export async function bindPublishedNote(
+  code: string,
+  input: BindNoteInput
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { noteId, noteUrl, accountId } = input
+    const db = await getDb()
+
+    const updateData: Record<string, unknown> = {
+      noteUrl,
+      status: 'published',
+      publishCodePublishedAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    if (noteId) {
+      updateData.noteId = noteId
+    }
+
+    if (accountId) {
+      updateData.accountId = new ObjectId(accountId)
+    }
+
+    const result = await db.collection(COLLECTIONS.WORKS).updateOne(
+      { publishCode: code },
+      { $set: updateData }
+    )
+
+    if (result.matchedCount === 0) {
+      return { success: false, error: '作品不存在' }
+    }
+
+    revalidatePath('/works')
+    return { success: true }
+  } catch (error) {
+    console.error('绑定笔记链接失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
+ * 更新作品内容（包括 draftContent）
+ */
+export async function updateWorkContent(
+  id: string,
+  data: Partial<Pick<Work, 'title' | 'content' | 'coverUrl' | 'tags' | 'draftContent'>>
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDb()
+
+    await db.collection(COLLECTIONS.WORKS).updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          ...data,
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    revalidatePath('/works')
+    revalidatePath(`/works/${id}`)
+    return { success: true }
+  } catch (error) {
+    console.error('更新作品内容失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
 }
