@@ -9,7 +9,10 @@
       "Bash(npx shadcn@latest add checkbox select -y)",
       "Bash(move \"e:\\2025\\xhs_ad_agent\\小红书图文内容生成器.md\" \"e:\\2025\\xhs_ad_agent\\prompts\"\")",
       "Bash(move:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)"
     ]
   }
 }

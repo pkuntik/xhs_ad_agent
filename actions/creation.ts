@@ -24,10 +24,10 @@ export async function generateContent(
     const userMessage = buildUserMessage(formData, learningData)
     const userId = generateUserId()
 
-    // 调用 API（非流式，等待完整响应）
-    const response = await client.messages.create({
+    // 使用流式请求（Opus 模型需要）
+    const stream = client.messages.stream({
       model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
-      max_tokens: 58192,
+      max_tokens: 16384,
       system: systemPrompt,
       messages: [
         { role: 'user', content: userMessage },
@@ -35,6 +35,9 @@ export async function generateContent(
       ],
       metadata: { user_id: userId }
     })
+
+    // 等待流完成并收集文本
+    const response = await stream.finalMessage()
 
     // 提取文本内容
     let rawText = '{'
