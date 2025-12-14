@@ -8,18 +8,20 @@ const COOKIE_INVALID_CODES = [401, 10001, 10002]
 // 代理配置
 const XHS_PROXY_URL = process.env.XHS_PROXY_URL
 
-// 创建代理 Agent（如果配置了代理）
+// 创建 Agent（支持代理和忽略SSL）
 function getDispatcher() {
-  if (!XHS_PROXY_URL) {
-    return undefined
+  if (XHS_PROXY_URL) {
+    // 使用代理，忽略目标服务器的 SSL 证书
+    return new ProxyAgent({
+      uri: XHS_PROXY_URL,
+      requestTls: {
+        rejectUnauthorized: false, // 忽略目标服务器 SSL 证书
+      },
+    })
   }
 
-  return new ProxyAgent({
-    uri: XHS_PROXY_URL,
-    connect: {
-      rejectUnauthorized: false, // 忽略 SSL 证书验证
-    },
-  })
+  // 不使用代理
+  return undefined
 }
 
 export interface XhsRequestOptions {
