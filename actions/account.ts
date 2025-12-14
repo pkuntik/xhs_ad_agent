@@ -3,7 +3,6 @@
 import { revalidatePath } from 'next/cache'
 import { ObjectId } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
-import { encryptCookie, decryptCookie } from '@/lib/utils/crypto'
 import { validateCookie } from '@/lib/xhs/auth'
 import type { XhsAccount, AccountListItem, CreateAccountInput, AccountThresholds } from '@/types/account'
 
@@ -113,16 +112,13 @@ export async function createAccount(input: CreateAccountInput): Promise<{ succes
       }
     }
 
-    // 加密 Cookie
-    const encryptedCookie = encryptCookie(cookie)
-
     // 使用提供的名称，或者从 Cookie 获取的昵称
     const accountName = name?.trim() || cookieInfo.nickname || '未命名账号'
 
     const account: Omit<XhsAccount, '_id'> = {
       name: accountName,
       userId: cookieInfo.userId || '',
-      cookie: encryptedCookie,
+      cookie: cookie,  // 直接存储，不加密
       advertiserId: cookieInfo.advertiserId || '',
       balance: cookieInfo.balance || 0,
       autoManaged: false,
@@ -163,13 +159,12 @@ export async function updateAccountCookie(
     }
 
     const db = await getDb()
-    const encryptedCookie = encryptCookie(cookie)
 
     await db.collection(COLLECTIONS.ACCOUNTS).updateOne(
       { _id: new ObjectId(id) },
       {
         $set: {
-          cookie: encryptedCookie,
+          cookie: cookie,  // 直接存储，不加密
           userId: cookieInfo.userId || undefined,
           advertiserId: cookieInfo.advertiserId || undefined,
           balance: cookieInfo.balance || undefined,

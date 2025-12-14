@@ -2,6 +2,25 @@ import { xhsRequest, CookieInvalidError } from '../client'
 
 // ============ 类型定义 ============
 
+// user/info 接口的原始返回格式
+interface UserInfoRaw {
+  userId: string
+  loginAccount: string
+  nickName: string  // 注意：API 返回的是 nickName
+  avatar?: string
+  sellerId?: string
+  fromArk?: boolean
+  superAdminFlag?: boolean
+  permissions?: string[]
+  roleType?: number
+  userAccountStatus?: {
+    professionalState: string
+    subjectState: number
+    promotionQualityState: number
+    advertiserCertificationState: number
+  }
+}
+
 export interface UserInfo {
   userId: string
   nickname: string
@@ -37,11 +56,17 @@ export interface AccountInfo {
  * GET /api/leona/user/info
  */
 export async function getUserInfo(cookie: string): Promise<UserInfo> {
-  return xhsRequest<UserInfo>({
+  const raw = await xhsRequest<UserInfoRaw>({
     cookie,
     method: 'GET',
     path: '/api/leona/user/info',
   })
+
+  return {
+    userId: raw.userId,
+    nickname: raw.nickName,  // 转换字段名
+    avatar: raw.avatar,
+  }
 }
 
 /**
@@ -72,15 +97,18 @@ export async function getAccountBalanceApi(cookie: string): Promise<AccountBalan
 
 /**
  * 获取完整账号信息（组合接口）
+ * 注意：对于未上传营业执照的账号，advertiser/list 和 account/balance 可能返回 404/500
  */
 export async function getAccountInfo(params: { cookie: string }): Promise<AccountInfo> {
   const { cookie } = params
 
   try {
-    // 并行请求用户信息、广告主列表、余额
-    const [userInfo, advertisers, balanceInfo] = await Promise.all([
-      getUserInfo(cookie),
-      getAdvertiserList(cookie),
+    // 先获取用户信息（必须成功）
+    const userInfo = await getUserInfo(cookie)
+
+    // 广告主列表和余额可以失败（未认证账号会返回404/500）
+    const [advertisers, balanceInfo] = await Promise.all([
+      getAdvertiserList(cookie).catch(() => [] as Advertiser[]),
       getAccountBalanceApi(cookie).catch(() => ({ balance: 0 })),
     ])
 

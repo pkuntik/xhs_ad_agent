@@ -2,7 +2,6 @@
 
 import { ObjectId, type Db } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
-import { decryptCookie } from '@/lib/utils/crypto'
 import { campaignApi, reportApi } from '@/lib/xhs'
 import type { XhsAccount } from '@/types/account'
 import type { Work } from '@/types/work'
@@ -47,7 +46,7 @@ export async function startDelivery(
       return { success: false, error: '账号状态异常' }
     }
 
-    const cookie = decryptCookie(account.cookie)
+    const cookie = account.cookie
     const budget = options?.budget ?? 2000
     const bidAmount = options?.bidAmount ?? account.defaultBidAmount
 
@@ -155,7 +154,7 @@ export async function checkAndDecide(
     throw new Error('作品不存在')
   }
 
-  const cookie = decryptCookie(account.cookie)
+  const cookie = account.cookie
 
   // 获取投放数据报表
   let reportData = {
@@ -367,7 +366,7 @@ export async function pauseDelivery(
       return { success: false, error: '账号不存在' }
     }
 
-    const cookie = decryptCookie(account.cookie)
+    const cookie = account.cookie
 
     try {
       await campaignApi.pauseCampaign({ cookie, campaignId: campaign.campaignId })
@@ -410,7 +409,7 @@ export async function resumeDelivery(
       return { success: false, error: '账号不存在' }
     }
 
-    const cookie = decryptCookie(account.cookie)
+    const cookie = account.cookie
 
     try {
       await campaignApi.resumeCampaign({ cookie, campaignId: campaign.campaignId })
