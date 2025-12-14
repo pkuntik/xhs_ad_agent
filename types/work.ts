@@ -10,15 +10,18 @@ export type WorkType = 'image' | 'video'
 // 作品
 export interface Work {
   _id: ObjectId
-  accountId?: ObjectId            // 关联账号（发布后关联）
+  accountId?: ObjectId            // 关联账号（发布后关联）- 保留用于兼容
 
-  // 笔记信息
+  // 笔记信息（保留用于兼容旧数据）
   noteId?: string                 // 小红书笔记 ID（发布后填写）
   noteUrl?: string                // 小红书笔记链接
   title: string                   // 笔记标题
   content?: string                // 笔记内容
   coverUrl?: string               // 封面图 URL
   type: WorkType                  // 笔记类型
+
+  // 多次发布记录
+  publications?: Publication[]    // 发布记录列表（一个作品可以发布多个笔记）
 
   // AI 生成的完整内容
   draftContent?: GenerationResult
@@ -65,4 +68,12 @@ export interface BindNoteInput {
   noteId?: string
   noteUrl: string
   accountId?: string
+}
+
+// 单次发布记录
+export interface Publication {
+  noteId?: string                 // 小红书笔记 ID
+  noteUrl: string                 // 小红书笔记链接
+  accountId?: string              // 发布账号 ID
+  publishedAt: Date               // 发布时间
 }

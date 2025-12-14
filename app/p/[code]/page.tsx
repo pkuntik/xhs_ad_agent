@@ -2,14 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Script from 'next/script'
+import Image from 'next/image'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Send, CheckCircle, Link as LinkIcon } from 'lucide-react'
+import { Loader2, Send, CheckCircle, Link as LinkIcon, Plus, ExternalLink } from 'lucide-react'
 import { getPublishConfig, markWorkScanned, bindPublishedNote } from '@/actions/work'
-import type { Work } from '@/types/work'
+import type { Work, Publication } from '@/types/work'
 import type { VerifyConfig } from '@/lib/xhs/signature'
 
 declare global {
@@ -56,7 +57,8 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
   // 绑定笔记相关状态
   const [noteUrl, setNoteUrl] = useState('')
   const [binding, setBinding] = useState(false)
-  const [bound, setBound] = useState(false)
+  const [publications, setPublications] = useState<Publication[]>([])
+  const [showAddMore, setShowAddMore] = useState(false)  // 已发布后是否显示添加更多
 
   const loadWork = useCallback(async () => {
     try {
@@ -70,11 +72,10 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
 
       setWork(result.work)
       setVerifyConfig(result.verifyConfig || null)
-      setNoteUrl(result.work.noteUrl || '')
+      setPublications(result.work.publications || [])
 
       if (result.work.status === 'published' || result.work.status === 'promoting') {
         setPublished(true)
-        setBound(true)
       }
 
       // 标记已扫码
@@ -101,14 +102,23 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
     try {
       const title = work.draftContent?.title?.text || work.title
       const content = work.draftContent?.content?.body || work.content || ''
-      const images = work.draftContent?.images?.map(img => img.imageUrl).filter((url): url is string => !!url) || []
+      let images = work.draftContent?.images?.map(img => img.imageUrl).filter((url): url is string => !!url) || []
+
+      // 如果没有图片，使用服务端生成的占位图
+      if (images.length === 0) {
+        const colorIndex = Math.floor(Math.random() * 6)
+        const placeholderUrl = `${window.location.origin}/api/image/placeholder?title=${encodeURIComponent(title)}&color=${colorIndex}`
+        images = [placeholderUrl]
+      }
+
+      console.log('images', images)
 
       window.xhs.share({
         shareInfo: {
           type: 'normal',
           title,
           content,
-          images,  // 始终传递数组，即使为空
+          images,
         },
         verifyConfig: {
           appKey: verifyConfig.appKey,
@@ -142,8 +152,15 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
       const result = await bindPublishedNote(work.publishCode, { noteUrl: noteUrl.trim() })
 
       if (result.success) {
-        setBound(true)
-        setWork({ ...work, noteUrl: noteUrl.trim(), status: 'published' })
+        // 添加到本地 publications 列表
+        const newPublication: Publication = {
+          noteUrl: noteUrl.trim(),
+          publishedAt: new Date(),
+        }
+        setPublications([...publications, newPublication])
+        setNoteUrl('')  // 清空输入框以便添加更多
+        setShowAddMore(false)
+        setWork({ ...work, status: 'published' })
       } else {
         setError(result.error || '绑定失败')
       }
@@ -216,6 +233,29 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
               <CardTitle className="text-lg">{title}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* 配图预览 */}
+              {work.draftContent?.images && work.draftContent.images.length > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                  {work.draftContent.images.map((img, i) => (
+                    <div key={i} className="relative aspect-[3/4] bg-gray-100 rounded-lg overflow-hidden">
+                      {img.imageUrl ? (
+                        <Image
+                          src={img.imageUrl}
+                          alt={`配图 ${i + 1}`}
+                          fill
+                          className="object-cover"
+                          unoptimized
+                        />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 p-2 text-center">
+                          {img.content || `配图 ${i + 1}`}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* 正文预览 */}
               <div className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-6">
                 {content}
@@ -239,13 +279,6 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
               {work.draftContent?.cover && (
                 <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
                   <strong>封面：</strong>{work.draftContent.cover.copywriting}
-                </div>
-              )}
-
-              {/* 配图数量提示 */}
-              {work.draftContent?.images && work.draftContent.images.length > 0 && (
-                <div className="text-xs text-gray-500">
-                  共 {work.draftContent.images.length} 张配图规划
                 </div>
               )}
             </CardContent>
@@ -278,7 +311,7 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
           )}
 
           {/* 发布成功提示 */}
-          {published && !bound && (
+          {published && publications.length === 0 && !showAddMore && (
             <Card className="border-green-200 bg-green-50">
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2 text-green-700 mb-3">
@@ -293,12 +326,12 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
           )}
 
           {/* 绑定笔记链接 */}
-          {(published || work.status === 'scanned') && !bound && (
+          {(published || work.status === 'scanned' || showAddMore) && (publications.length === 0 || showAddMore) && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   <LinkIcon className="h-4 w-4" />
-                  绑定笔记链接
+                  {publications.length > 0 ? '添加更多笔记链接' : '绑定笔记链接'}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -314,43 +347,65 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
                     在小红书 App 中打开笔记，点击分享 → 复制链接
                   </p>
                 </div>
-                <Button
-                  className="w-full"
-                  onClick={handleBindNote}
-                  disabled={binding || !noteUrl.trim()}
-                >
-                  {binding ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      绑定中...
-                    </>
-                  ) : (
-                    '确认绑定'
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    onClick={handleBindNote}
+                    disabled={binding || !noteUrl.trim()}
+                  >
+                    {binding ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        绑定中...
+                      </>
+                    ) : (
+                      '确认绑定'
+                    )}
+                  </Button>
+                  {showAddMore && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowAddMore(false)}
+                    >
+                      取消
+                    </Button>
                   )}
-                </Button>
+                </div>
               </CardContent>
             </Card>
           )}
 
-          {/* 绑定成功 */}
-          {bound && (
+          {/* 已绑定的笔记列表 */}
+          {publications.length > 0 && !showAddMore && (
             <Card className="border-green-200 bg-green-50">
-              <CardContent className="pt-4 text-center">
-                <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-2" />
-                <h3 className="font-medium text-green-700 mb-1">绑定成功</h3>
-                <p className="text-sm text-green-600">
-                  笔记已成功绑定，可以关闭此页面了
-                </p>
-                {work.noteUrl && (
-                  <a
-                    href={work.noteUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-pink-500 hover:underline mt-2 block"
-                  >
-                    查看笔记 →
-                  </a>
-                )}
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2 text-green-700 mb-3">
+                  <CheckCircle className="h-5 w-5" />
+                  <span className="font-medium">已绑定 {publications.length} 个笔记</span>
+                </div>
+                <div className="space-y-2 mb-4">
+                  {publications.map((pub, index) => (
+                    <a
+                      key={index}
+                      href={pub.noteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-sm text-pink-600 hover:text-pink-700 hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      笔记 {index + 1}
+                    </a>
+                  ))}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setShowAddMore(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  添加更多笔记
+                </Button>
               </CardContent>
             </Card>
           )}

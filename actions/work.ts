@@ -339,7 +339,7 @@ export async function getPublishConfig(code: string): Promise<{
   success: boolean
   error?: string
   work?: Work
-  verifyConfig?: ReturnType<typeof generateVerifyConfig>
+  verifyConfig?: Awaited<ReturnType<typeof generateVerifyConfig>>
 }> {
   try {
     const work = await getWorkByPublishCode(code)
@@ -347,8 +347,8 @@ export async function getPublishConfig(code: string): Promise<{
       return { success: false, error: '作品不存在' }
     }
 
-    // 生成签名配置
-    const verifyConfig = generateVerifyConfig()
+    // 生成签名配置（异步，需要获取 access_token）
+    const verifyConfig = await generateVerifyConfig()
 
     // 序列化 work 对象，将 ObjectId 和 Date 转换为字符串
     const serializedWork = JSON.parse(JSON.stringify(work))
@@ -402,8 +402,17 @@ export async function bindPublishedNote(
     const { noteId, noteUrl, accountId } = input
     const db = await getDb()
 
-    const updateData: Record<string, unknown> = {
+    // 创建新的发布记录
+    const publication = {
+      noteId,
       noteUrl,
+      accountId,
+      publishedAt: new Date(),
+    }
+
+    // 使用 $push 添加到 publications 数组，同时更新兼容字段
+    const updateData: Record<string, unknown> = {
+      noteUrl,  // 保留兼容字段（最新的链接）
       status: 'published',
       publishCodePublishedAt: new Date(),
       updatedAt: new Date(),
@@ -419,7 +428,11 @@ export async function bindPublishedNote(
 
     const result = await db.collection(COLLECTIONS.WORKS).updateOne(
       { publishCode: code },
-      { $set: updateData }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      {
+        $set: updateData,
+        $push: { publications: publication }
+      } as any
     )
 
     if (result.matchedCount === 0) {
