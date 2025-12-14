@@ -104,11 +104,19 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
       const content = work.draftContent?.content?.body || work.content || ''
       let images = work.draftContent?.images?.map(img => img.imageUrl).filter((url): url is string => !!url) || []
 
-      // 如果没有图片，使用服务端生成的占位图
+      // 如果没有实际图片 URL，为每张规划的图生成占位图
       if (images.length === 0) {
-        const colorIndex = Math.floor(Math.random() * 6)
-        const placeholderUrl = `${window.location.origin}/api/image/placeholder?title=${encodeURIComponent(title)}&color=${colorIndex}`
-        images = [placeholderUrl]
+        const allImages = work.draftContent?.images || []
+        if (allImages.length > 0) {
+          // 为每张规划图生成占位图
+          images = allImages.map((img, i) =>
+            `${window.location.origin}/api/image/placeholder?title=${encodeURIComponent(img.content || `配图${i + 1}`)}&color=${i % 6}`
+          )
+        } else {
+          // 完全没有图片规划，生成单张封面占位图
+          const colorIndex = Math.floor(Math.random() * 6)
+          images = [`${window.location.origin}/api/image/placeholder?title=${encodeURIComponent(title)}&color=${colorIndex}`]
+        }
       }
 
       console.log('images', images)
@@ -234,27 +242,66 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
             </CardHeader>
             <CardContent className="space-y-4">
               {/* 配图预览 */}
-              {work.draftContent?.images && work.draftContent.images.length > 0 && (
-                <div className="grid grid-cols-3 gap-2">
-                  {work.draftContent.images.map((img, i) => (
-                    <div key={i} className="relative aspect-[3/4] bg-gray-100 rounded-lg overflow-hidden">
-                      {img.imageUrl ? (
+              {(() => {
+                // 获取有实际 URL 的图片
+                const imagesWithUrl = work.draftContent?.images?.filter(img => img.imageUrl) || []
+                const allImages = work.draftContent?.images || []
+
+                if (imagesWithUrl.length > 0) {
+                  // 有实际图片 URL，显示图片
+                  return (
+                    <div className="grid grid-cols-3 gap-2">
+                      {imagesWithUrl.map((img, i) => (
+                        <div key={i} className="relative aspect-[3/4] bg-gray-100 rounded-lg overflow-hidden">
+                          <Image
+                            src={img.imageUrl!}
+                            alt={`配图 ${i + 1}`}
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )
+                } else if (allImages.length > 0) {
+                  // 有 AI 规划的图片，为每张规划图生成占位图
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-500">将自动生成 {allImages.length} 张配图：</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {allImages.map((img, i) => (
+                          <div key={i} className="relative aspect-[3/4] bg-gray-100 rounded-lg overflow-hidden">
+                            <Image
+                              src={`/api/image/placeholder?title=${encodeURIComponent(img.content || `配图${i + 1}`)}&color=${i % 6}`}
+                              alt={`配图 ${i + 1}`}
+                              fill
+                              className="object-cover"
+                              unoptimized
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                } else {
+                  // 完全没有图片规划，显示单张封面占位图
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-500">将自动生成封面图：</p>
+                      <div className="relative aspect-[3/4] max-w-[200px] bg-gray-100 rounded-lg overflow-hidden">
                         <Image
-                          src={img.imageUrl}
-                          alt={`配图 ${i + 1}`}
+                          src={`/api/image/placeholder?title=${encodeURIComponent(title)}&color=0`}
+                          alt="自动生成封面"
                           fill
                           className="object-cover"
                           unoptimized
                         />
-                      ) : (
-                        <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 p-2 text-center">
-                          {img.content || `配图 ${i + 1}`}
-                        </div>
-                      )}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                  )
+                }
+              })()}
 
               {/* 正文预览 */}
               <div className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-6">
