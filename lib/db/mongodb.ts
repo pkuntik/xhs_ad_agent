@@ -1,0 +1,47 @@
+import { MongoClient, Db } from 'mongodb'
+
+const MONGODB_URI = process.env.MONGODB_URI!
+const DB_NAME = 'xhs_ad_agent'
+
+if (!MONGODB_URI) {
+  throw new Error('请在环境变量中配置 MONGODB_URI')
+}
+
+let client: MongoClient | null = null
+let db: Db | null = null
+
+export async function getDb(): Promise<Db> {
+  if (db) return db
+
+  if (!client) {
+    client = new MongoClient(MONGODB_URI, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+    })
+
+    await client.connect()
+    console.log('MongoDB 连接成功')
+  }
+
+  db = client.db(DB_NAME)
+  return db
+}
+
+export async function closeDb(): Promise<void> {
+  if (client) {
+    await client.close()
+    client = null
+    db = null
+  }
+}
+
+// 集合名称常量
+export const COLLECTIONS = {
+  ACCOUNTS: 'accounts',
+  WORKS: 'works',
+  CAMPAIGNS: 'campaigns',
+  DELIVERY_LOGS: 'delivery_logs',
+  LEADS: 'leads',
+  TASKS: 'tasks',
+  AI_STRATEGIES: 'ai_strategies',
+} as const
