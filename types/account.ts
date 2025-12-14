@@ -42,7 +42,7 @@ export interface XhsAccount {
 
 // 创建账号的输入
 export interface CreateAccountInput {
-  name: string
+  name?: string              // 可选，不填则使用从 Cookie 获取的昵称
   cookie: string
   dailyBudget?: number
   defaultBidAmount?: number

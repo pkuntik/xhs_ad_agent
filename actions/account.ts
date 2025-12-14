@@ -7,6 +7,56 @@ import { encryptCookie, decryptCookie } from '@/lib/utils/crypto'
 import { validateCookie } from '@/lib/xhs/auth'
 import type { XhsAccount, AccountListItem, CreateAccountInput, AccountThresholds } from '@/types/account'
 
+// Cookie 验证结果
+export interface VerifyCookieResult {
+  success: boolean
+  error?: string
+  data?: {
+    userId: string
+    advertiserId: string
+    nickname: string
+    avatar?: string
+    balance: number
+  }
+}
+
+/**
+ * 验证 Cookie 并获取账号信息（用于添加账号前的预览确认）
+ */
+export async function verifyCookie(cookie: string): Promise<VerifyCookieResult> {
+  if (!cookie || cookie.trim().length < 10) {
+    return { success: false, error: 'Cookie 不能为空' }
+  }
+
+  const cookieInfo = await validateCookie(cookie.trim())
+
+  if (!cookieInfo.valid) {
+    return { success: false, error: cookieInfo.errorMessage || 'Cookie 无效或已过期' }
+  }
+
+  // 检查是否已存在
+  if (cookieInfo.userId) {
+    const db = await getDb()
+    const existing = await db
+      .collection(COLLECTIONS.ACCOUNTS)
+      .findOne({ userId: cookieInfo.userId })
+    if (existing) {
+      return { success: false, error: '该账号已添加过了' }
+    }
+  }
+
+  return {
+    success: true,
+    data: {
+      userId: cookieInfo.userId || '',
+      advertiserId: cookieInfo.advertiserId || '',
+      nickname: cookieInfo.nickname || '未知用户',
+      avatar: cookieInfo.avatar,
+      balance: cookieInfo.balance || 0,
+    }
+  }
+}
+
 /**
  * 获取所有账号列表
  */
@@ -39,6 +89,7 @@ export async function getAccountById(id: string): Promise<AccountListItem | null
 
 /**
  * 添加账号
+ * name 为可选，如果不提供则使用从 Cookie 获取的昵称
  */
 export async function createAccount(input: CreateAccountInput): Promise<{ success: boolean; error?: string; id?: string }> {
   try {
@@ -47,13 +98,13 @@ export async function createAccount(input: CreateAccountInput): Promise<{ succes
     // 验证 Cookie 有效性
     const cookieInfo = await validateCookie(cookie)
     if (!cookieInfo.valid) {
-      return { success: false, error: 'Cookie 无效或已过期' }
+      return { success: false, error: cookieInfo.errorMessage || 'Cookie 无效或已过期' }
     }
 
     const db = await getDb()
 
     // 检查是否已存在（通过 userId 去重）
-    if (cookieInfo.userId && cookieInfo.userId !== 'pending') {
+    if (cookieInfo.userId) {
       const existing = await db
         .collection(COLLECTIONS.ACCOUNTS)
         .findOne({ userId: cookieInfo.userId })
@@ -65,8 +116,11 @@ export async function createAccount(input: CreateAccountInput): Promise<{ succes
     // 加密 Cookie
     const encryptedCookie = encryptCookie(cookie)
 
+    // 使用提供的名称，或者从 Cookie 获取的昵称
+    const accountName = name?.trim() || cookieInfo.nickname || '未命名账号'
+
     const account: Omit<XhsAccount, '_id'> = {
-      name,
+      name: accountName,
       userId: cookieInfo.userId || '',
       cookie: encryptedCookie,
       advertiserId: cookieInfo.advertiserId || '',
