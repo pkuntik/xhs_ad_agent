@@ -1,9 +1,26 @@
-import { fetch, type RequestInit } from 'undici'
+import { fetch, ProxyAgent, type RequestInit } from 'undici'
 
 const BASE_URL = 'https://ad.xiaohongshu.com'
 
 // Cookie 失效错误码
 const COOKIE_INVALID_CODES = [401, 10001, 10002]
+
+// 代理配置
+const XHS_PROXY_URL = process.env.XHS_PROXY_URL
+
+// 创建代理 Agent（如果配置了代理）
+function getDispatcher() {
+  if (!XHS_PROXY_URL) {
+    return undefined
+  }
+
+  return new ProxyAgent({
+    uri: XHS_PROXY_URL,
+    connect: {
+      rejectUnauthorized: false, // 忽略 SSL 证书验证
+    },
+  })
+}
 
 export interface XhsRequestOptions {
   cookie: string
@@ -65,7 +82,12 @@ export async function xhsRequest<T = unknown>(
     fetchOptions.body = JSON.stringify(body)
   }
 
-  const response = await fetch(url, fetchOptions)
+  // 使用代理（如果配置了）
+  const dispatcher = getDispatcher()
+  const response = await fetch(url, {
+    ...fetchOptions,
+    dispatcher,
+  } as RequestInit)
 
   if (!response.ok) {
     throw new Error(`XHS API Error: ${response.status} ${response.statusText}`)
