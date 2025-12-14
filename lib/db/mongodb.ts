@@ -1,7 +1,7 @@
 import { MongoClient, Db } from 'mongodb'
 
 const MONGODB_URI = process.env.MONGODB_URI!
-const DB_NAME = 'xhs_ad_agent'
+const DB_NAME = 'gpts'
 
 if (!MONGODB_URI) {
   throw new Error('请在环境变量中配置 MONGODB_URI')
