@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Progress } from '@/components/ui/progress'
 import {
   Select,
   SelectContent,
@@ -16,7 +17,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Loader2, Sparkles, Copy, Check, Save, Edit2 } from 'lucide-react'
-import { generateContent } from '@/actions/creation'
 import { saveWork } from '@/actions/work'
 import type {
   CreationFormData,
@@ -68,6 +68,10 @@ export default function CreationPage() {
   const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  // 进度条状态
+  const [progress, setProgress] = useState(0)
+  const [progressLabel, setProgressLabel] = useState('')
+
   // 编辑状态的内容
   const [editedTitle, setEditedTitle] = useState('')
   const [editedContent, setEditedContent] = useState('')
@@ -84,30 +88,71 @@ export default function CreationPage() {
     setResult(null)
     setRawText('')
     setIsEditing(false)
+    setProgress(0)
+    setProgressLabel('正在连接...')
 
     try {
-      const response = await generateContent(formData)
+      const response = await fetch('/api/creation/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ formData }),
+      })
 
-      if (!response.success) {
-        setError(response.error || '生成失败')
-        return
+      if (!response.ok) {
+        throw new Error('请求失败')
       }
 
-      if (response.rawText) {
-        setRawText(response.rawText)
+      const reader = response.body?.getReader()
+      if (!reader) {
+        throw new Error('无法读取响应')
       }
 
-      if (response.result) {
-        setResult(response.result)
-        // 初始化编辑内容
-        setEditedTitle(response.result.title?.text || '')
-        setEditedContent(response.result.content?.body || '')
-        setEditedTopics(response.result.topics?.tags.join(' ') || '')
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6)
+            if (data === '[DONE]') continue
+
+            try {
+              const parsed = JSON.parse(data)
+
+              if (parsed.type === 'progress') {
+                setProgress(parsed.percent)
+                setProgressLabel(parsed.label)
+              } else if (parsed.type === 'result') {
+                if (parsed.rawText) {
+                  setRawText(parsed.rawText)
+                }
+                if (parsed.result) {
+                  setResult(parsed.result)
+                  setEditedTitle(parsed.result.title?.text || '')
+                  setEditedContent(parsed.result.content?.body || '')
+                  setEditedTopics(parsed.result.topics?.tags.join(' ') || '')
+                }
+              } else if (parsed.type === 'error') {
+                setError(parsed.error || '生成失败')
+              }
+            } catch {
+              // 忽略解析错误
+            }
+          }
+        }
       }
-    } catch (err: any) {
-      setError(err.message || '生成失败，请重试')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : '生成失败，请重试'
+      setError(errorMessage)
     } finally {
       setLoading(false)
+      setProgress(0)
+      setProgressLabel('')
     }
   }
 
@@ -303,10 +348,18 @@ export default function CreationPage() {
         <div className="space-y-4">
           {loading && (
             <Card>
-              <CardContent className="py-12 text-center">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-                <p className="text-muted-foreground">AI 正在生成内容，请稍候...</p>
-                <p className="text-xs text-muted-foreground mt-2">通常需要 20-40 秒</p>
+              <CardContent className="py-8">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-center gap-3">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    <span className="text-sm font-medium">{progressLabel || 'AI 正在生成...'}</span>
+                  </div>
+                  <Progress value={progress} className="h-2" />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>进度</span>
+                    <span>{progress}%</span>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}

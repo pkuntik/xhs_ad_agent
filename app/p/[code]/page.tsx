@@ -1,0 +1,367 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import Script from 'next/script'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Loader2, Send, CheckCircle, Link as LinkIcon } from 'lucide-react'
+import { getPublishConfig, markWorkScanned, bindPublishedNote } from '@/actions/work'
+import type { Work } from '@/types/work'
+import type { VerifyConfig } from '@/lib/xhs/signature'
+
+declare global {
+  interface Window {
+    xhs: {
+      share: (config: {
+        shareInfo: {
+          type: 'normal' | 'video'
+          title: string
+          content: string
+          images?: string[]
+        }
+        verifyConfig: {
+          appKey: string
+          nonce: string
+          timestamp: number
+          signature: string
+        }
+        success?: () => void
+        fail?: (err: unknown) => void
+      }) => void
+    }
+  }
+}
+
+const statusMap = {
+  unused: { label: '待发布', color: 'bg-yellow-100 text-yellow-800' },
+  scanned: { label: '已扫码', color: 'bg-blue-100 text-blue-800' },
+  published: { label: '已发布', color: 'bg-green-100 text-green-800' },
+  promoting: { label: '投放中', color: 'bg-purple-100 text-purple-800' },
+  paused: { label: '已暂停', color: 'bg-gray-100 text-gray-800' },
+  archived: { label: '已归档', color: 'bg-gray-100 text-gray-800' },
+}
+
+export default function PublishPage({ params }: { params: Promise<{ code: string }> }) {
+  const [work, setWork] = useState<Work | null>(null)
+  const [verifyConfig, setVerifyConfig] = useState<VerifyConfig | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [sdkLoaded, setSdkLoaded] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [published, setPublished] = useState(false)
+
+  // 绑定笔记相关状态
+  const [noteUrl, setNoteUrl] = useState('')
+  const [binding, setBinding] = useState(false)
+  const [bound, setBound] = useState(false)
+
+  const loadWork = useCallback(async () => {
+    try {
+      const resolvedParams = await params
+      const result = await getPublishConfig(resolvedParams.code)
+
+      if (!result.success || !result.work) {
+        setError(result.error || '作品不存在')
+        return
+      }
+
+      setWork(result.work)
+      setVerifyConfig(result.verifyConfig || null)
+      setNoteUrl(result.work.noteUrl || '')
+
+      if (result.work.status === 'published' || result.work.status === 'promoting') {
+        setPublished(true)
+        setBound(true)
+      }
+
+      // 标记已扫码
+      if (result.work.status === 'unused') {
+        await markWorkScanned(resolvedParams.code)
+      }
+    } catch (err) {
+      setError('加载失败，请刷新重试')
+    } finally {
+      setLoading(false)
+    }
+  }, [params])
+
+  useEffect(() => {
+    loadWork()
+  }, [loadWork])
+
+  async function handlePublish() {
+    if (!work || !verifyConfig || !sdkLoaded) return
+
+    setPublishing(true)
+    setError('')
+
+    try {
+      const title = work.draftContent?.title?.text || work.title
+      const content = work.draftContent?.content?.body || work.content || ''
+      const images = work.draftContent?.images?.map(img => img.imageUrl).filter((url): url is string => !!url) || []
+
+      window.xhs.share({
+        shareInfo: {
+          type: 'normal',
+          title,
+          content,
+          images: images.length > 0 ? images : undefined,
+        },
+        verifyConfig: {
+          appKey: verifyConfig.appKey,
+          nonce: verifyConfig.nonce,
+          timestamp: verifyConfig.timestamp,
+          signature: verifyConfig.signature,
+        },
+        success: () => {
+          setPublished(true)
+          setPublishing(false)
+        },
+        fail: (err) => {
+          console.error('发布失败:', err)
+          setError('唤起小红书失败，请确保已安装小红书 App')
+          setPublishing(false)
+        },
+      })
+    } catch (err) {
+      setError('发布失败，请重试')
+      setPublishing(false)
+    }
+  }
+
+  async function handleBindNote() {
+    if (!work || !noteUrl.trim()) return
+
+    setBinding(true)
+    setError('')
+
+    try {
+      const result = await bindPublishedNote(work.publishCode, { noteUrl: noteUrl.trim() })
+
+      if (result.success) {
+        setBound(true)
+        setWork({ ...work, noteUrl: noteUrl.trim(), status: 'published' })
+      } else {
+        setError(result.error || '绑定失败')
+      }
+    } catch (err) {
+      setError('绑定失败，请重试')
+    } finally {
+      setBinding(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-pink-500" />
+          <p className="mt-2 text-gray-600">加载中...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!work) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="pt-6 text-center">
+            <p className="text-red-500">{error || '作品不存在或已过期'}</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  const status = statusMap[work.status] || statusMap.unused
+  const title = work.draftContent?.title?.text || work.title
+  const content = work.draftContent?.content?.body || work.content || ''
+  const topics = work.draftContent?.topics?.tags || work.tags || []
+
+  return (
+    <>
+      <Script
+        src="https://fe-static.xhscdn.com/biz-static/goten/xhs-1.0.1.js"
+        onLoad={() => setSdkLoaded(true)}
+      />
+
+      <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
+        {/* 头部 */}
+        <header className="bg-white shadow-sm sticky top-0 z-10">
+          <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-pink-500 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">XHS</span>
+              </div>
+              <span className="font-medium">小红书发布</span>
+            </div>
+            <Badge className={status.color}>{status.label}</Badge>
+          </div>
+        </header>
+
+        <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
+          {error && (
+            <div className="text-sm text-red-500 bg-red-50 p-3 rounded-lg">
+              {error}
+            </div>
+          )}
+
+          {/* 内容预览 */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">{title}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* 正文预览 */}
+              <div className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-6">
+                {content}
+              </div>
+
+              {/* 话题标签 */}
+              {topics.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {topics.map((tag, i) => (
+                    <span
+                      key={i}
+                      className="px-2 py-1 bg-pink-50 text-pink-600 rounded-full text-xs"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* 封面规划提示 */}
+              {work.draftContent?.cover && (
+                <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+                  <strong>封面：</strong>{work.draftContent.cover.copywriting}
+                </div>
+              )}
+
+              {/* 配图数量提示 */}
+              {work.draftContent?.images && work.draftContent.images.length > 0 && (
+                <div className="text-xs text-gray-500">
+                  共 {work.draftContent.images.length} 张配图规划
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 发布按钮 */}
+          {!published && (
+            <Button
+              className="w-full h-12 text-lg bg-pink-500 hover:bg-pink-600"
+              onClick={handlePublish}
+              disabled={publishing || !sdkLoaded}
+            >
+              {publishing ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  正在唤起小红书...
+                </>
+              ) : !sdkLoaded ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  加载中...
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-5 w-5" />
+                  发布到小红书
+                </>
+              )}
+            </Button>
+          )}
+
+          {/* 发布成功提示 */}
+          {published && !bound && (
+            <Card className="border-green-200 bg-green-50">
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2 text-green-700 mb-3">
+                  <CheckCircle className="h-5 w-5" />
+                  <span className="font-medium">已唤起小红书 App</span>
+                </div>
+                <p className="text-sm text-green-600 mb-4">
+                  请在小红书 App 中完成发布，然后回到这里填写笔记链接
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 绑定笔记链接 */}
+          {(published || work.status === 'scanned') && !bound && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <LinkIcon className="h-4 w-4" />
+                  绑定笔记链接
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-2">
+                  <Label className="text-sm">发布后的笔记链接</Label>
+                  <Input
+                    value={noteUrl}
+                    onChange={(e) => setNoteUrl(e.target.value)}
+                    placeholder="https://www.xiaohongshu.com/explore/..."
+                    className="text-sm"
+                  />
+                  <p className="text-xs text-gray-500">
+                    在小红书 App 中打开笔记，点击分享 → 复制链接
+                  </p>
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={handleBindNote}
+                  disabled={binding || !noteUrl.trim()}
+                >
+                  {binding ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      绑定中...
+                    </>
+                  ) : (
+                    '确认绑定'
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 绑定成功 */}
+          {bound && (
+            <Card className="border-green-200 bg-green-50">
+              <CardContent className="pt-4 text-center">
+                <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-2" />
+                <h3 className="font-medium text-green-700 mb-1">绑定成功</h3>
+                <p className="text-sm text-green-600">
+                  笔记已成功绑定，可以关闭此页面了
+                </p>
+                {work.noteUrl && (
+                  <a
+                    href={work.noteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-pink-500 hover:underline mt-2 block"
+                  >
+                    查看笔记 →
+                  </a>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </main>
+
+        {/* 底部说明 */}
+        <footer className="max-w-lg mx-auto px-4 py-6 text-center text-xs text-gray-400">
+          <p>点击发布按钮将唤起小红书 App</p>
+          <p>请确保已安装小红书客户端</p>
+        </footer>
+      </div>
+    </>
+  )
+}
