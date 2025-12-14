@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Send, CheckCircle, Link as LinkIcon, Plus, ExternalLink } from 'lucide-react'
+import { Loader2, Send, CheckCircle, Link as LinkIcon, Plus, ExternalLink, Smartphone } from 'lucide-react'
 import { getPublishConfig, markWorkScanned, bindPublishedNote } from '@/actions/work'
 import type { Work, Publication } from '@/types/work'
 import type { VerifyConfig } from '@/lib/xhs/signature'
@@ -53,6 +53,7 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
   const [sdkLoaded, setSdkLoaded] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [published, setPublished] = useState(false)
+  const [isMobile, setIsMobile] = useState(true)  // 默认 true 避免闪烁
 
   // 绑定笔记相关状态
   const [noteUrl, setNoteUrl] = useState('')
@@ -92,6 +93,16 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
   useEffect(() => {
     loadWork()
   }, [loadWork])
+
+  // 检测是否为移动端
+  useEffect(() => {
+    const checkMobile = () => {
+      const userAgent = navigator.userAgent || navigator.vendor
+      const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase())
+      setIsMobile(isMobileDevice)
+    }
+    checkMobile()
+  }, [])
 
   async function handlePublish() {
     if (!work || !verifyConfig || !sdkLoaded) return
@@ -333,28 +344,48 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
 
           {/* 发布按钮 */}
           {!published && (
-            <Button
-              className="w-full h-12 text-lg bg-pink-500 hover:bg-pink-600"
-              onClick={handlePublish}
-              disabled={publishing || !sdkLoaded}
-            >
-              {publishing ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  正在唤起小红书...
-                </>
-              ) : !sdkLoaded ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  加载中...
-                </>
-              ) : (
-                <>
-                  <Send className="mr-2 h-5 w-5" />
-                  发布到小红书
-                </>
+            <>
+              {!isMobile && (
+                <Card className="border-orange-200 bg-orange-50">
+                  <CardContent className="pt-4">
+                    <div className="flex items-center gap-2 text-orange-700 mb-2">
+                      <Smartphone className="h-5 w-5" />
+                      <span className="font-medium">请在手机上打开此页面</span>
+                    </div>
+                    <p className="text-sm text-orange-600">
+                      小红书 SDK 仅支持移动端，请使用手机扫码访问此页面后发布
+                    </p>
+                  </CardContent>
+                </Card>
               )}
-            </Button>
+              <Button
+                className="w-full h-12 text-lg bg-pink-500 hover:bg-pink-600"
+                onClick={handlePublish}
+                disabled={publishing || !sdkLoaded || !isMobile}
+              >
+                {publishing ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    正在唤起小红书...
+                  </>
+                ) : !isMobile ? (
+                  <>
+                    <Smartphone className="mr-2 h-5 w-5" />
+                    请在手机上打开
+                  </>
+                ) : !sdkLoaded ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    加载中...
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-5 w-5" />
+                    发布到小红书
+                  </>
+                )}
+              </Button>
+            </>
           )}
 
           {/* 发布成功提示 */}

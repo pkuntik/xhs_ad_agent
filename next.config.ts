@@ -17,6 +17,11 @@ const nextConfig: NextConfig = {
         hostname: 'ci.xiaohongshu.com',
       },
     ],
+    localPatterns: [
+      {
+        pathname: '/api/image/**',
+      },
+    ],
   },
 }
 
