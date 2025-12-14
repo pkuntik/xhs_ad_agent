@@ -350,7 +350,10 @@ export async function getPublishConfig(code: string): Promise<{
     // 生成签名配置
     const verifyConfig = generateVerifyConfig()
 
-    return { success: true, work, verifyConfig }
+    // 序列化 work 对象，将 ObjectId 和 Date 转换为字符串
+    const serializedWork = JSON.parse(JSON.stringify(work))
+
+    return { success: true, work: serializedWork, verifyConfig }
   } catch (error) {
     console.error('获取发布配置失败:', error)
     return { success: false, error: error instanceof Error ? error.message : '未知错误' }

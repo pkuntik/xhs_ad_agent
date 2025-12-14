@@ -108,7 +108,7 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
           type: 'normal',
           title,
           content,
-          images: images.length > 0 ? images : undefined,
+          images,  // 始终传递数组，即使为空
         },
         verifyConfig: {
           appKey: verifyConfig.appKey,
