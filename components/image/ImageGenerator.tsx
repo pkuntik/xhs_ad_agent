@@ -3,9 +3,27 @@
 import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Loader2, Sparkles, RefreshCw } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Loader2, Sparkles, RefreshCw, X } from 'lucide-react'
 import { uploadBase64Image } from '@/lib/utils/image'
 import type { GenerationResult, ImagePlan, CreationFormData } from '@/types/creation'
+
+// 预设的重新生成原因
+const REGENERATE_REASONS = [
+  { value: 'style', label: '图片风格不对' },
+  { value: 'face', label: '人物不好看' },
+  { value: 'complex', label: '画面太复杂' },
+  { value: 'color', label: '颜色不协调' },
+  { value: 'text', label: '文字效果不好' },
+  { value: 'composition', label: '构图不好' },
+  { value: 'other', label: '其他' },
+]
+
+interface FeedbackWithReason {
+  prompt: string
+  feedback: 'like' | 'dislike'
+  reason?: string
+}
 
 interface ImageGenerationContext {
   formData?: CreationFormData
@@ -34,7 +52,7 @@ interface ImageGeneratorProps {
   initialPrompt?: string
   faceSeed?: string
   onFaceSeedGenerated?: (faceSeed: string) => void
-  feedbackExamples?: Array<{ prompt: string; feedback: 'like' | 'dislike' }>
+  feedbackExamples?: FeedbackWithReason[]
   compact?: boolean  // 紧凑模式，图片和按钮更小
 }
 
@@ -59,6 +77,12 @@ export function ImageGenerator({
   const [showPrompt, setShowPrompt] = useState(false)
   const [faceSeed, setFaceSeed] = useState<string | null>(initialFaceSeed || null)
   const [createdBlobUrl, setCreatedBlobUrl] = useState<string | null>(null)
+
+  // 重新生成原因选择相关状态
+  const [showRegenDialog, setShowRegenDialog] = useState(false)
+  const [selectedReason, setSelectedReason] = useState<string>('')
+  const [customReason, setCustomReason] = useState('')
+  const [feedbackHistory, setFeedbackHistory] = useState<FeedbackWithReason[]>([])
 
   React.useEffect(() => {
     if (initialImageUrl) {
@@ -97,7 +121,7 @@ export function ImageGenerator({
     }
   }, [createdBlobUrl])
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (additionalFeedback?: FeedbackWithReason) => {
     if (!prompt.trim()) {
       setError('请提供图片描述')
       return
@@ -108,7 +132,12 @@ export function ImageGenerator({
     setGeneratedPrompt(null)
 
     try {
-      const feedbackExamples = propFeedbackExamples || []
+      // 合并 prop 传入的 feedbackExamples、历史反馈和本次反馈
+      const allFeedback: FeedbackWithReason[] = [
+        ...(propFeedbackExamples || []),
+        ...feedbackHistory,
+        ...(additionalFeedback ? [additionalFeedback] : []),
+      ]
 
       // 第一步: 生成图片提示词
       const promptResponse = await fetch('/api/image/generate-prompt', {
@@ -119,7 +148,7 @@ export function ImageGenerator({
         body: JSON.stringify({
           imageType,
           context,
-          feedbackExamples,
+          feedbackExamples: allFeedback,
           faceSeed,
         }),
       })
@@ -335,6 +364,49 @@ export function ImageGenerator({
     }
   }
 
+  // 处理按钮点击 - 首次生成直接执行，重新生成时显示原因选择
+  const handleButtonClick = () => {
+    if (imageUrl && generatedPrompt) {
+      // 已有图片，显示原因选择弹窗
+      setShowRegenDialog(true)
+    } else {
+      // 首次生成，直接执行
+      handleGenerate()
+    }
+  }
+
+  // 确认重新生成
+  const handleConfirmRegenerate = async () => {
+    const reason = selectedReason === 'other'
+      ? customReason
+      : REGENERATE_REASONS.find(r => r.value === selectedReason)?.label || ''
+
+    // 创建本次反馈
+    const currentFeedback: FeedbackWithReason | undefined = generatedPrompt && reason
+      ? { prompt: generatedPrompt, feedback: 'dislike', reason }
+      : undefined
+
+    // 将本次反馈添加到历史记录
+    if (currentFeedback) {
+      setFeedbackHistory(prev => [...prev, currentFeedback])
+    }
+
+    // 关闭弹窗并清空选择
+    setShowRegenDialog(false)
+    setSelectedReason('')
+    setCustomReason('')
+
+    // 执行生成，传入本次反馈
+    await handleGenerate(currentFeedback)
+  }
+
+  // 取消重新生成
+  const handleCancelRegenerate = () => {
+    setShowRegenDialog(false)
+    setSelectedReason('')
+    setCustomReason('')
+  }
+
   return (
     <div className={compact ? "space-y-2" : "space-y-4"}>
       {/* 已有图片时先显示图片 */}
@@ -348,9 +420,9 @@ export function ImageGenerator({
         </div>
       )}
 
-      <div className={compact ? "flex flex-wrap gap-1" : "flex gap-2"}>
+      <div className={compact ? "flex flex-wrap gap-1 relative" : "flex gap-2 relative"}>
         <Button
-          onClick={handleGenerate}
+          onClick={handleButtonClick}
           disabled={isGenerating || isChangingFace || !prompt.trim()}
           className="flex-1"
           variant="outline"
@@ -389,6 +461,62 @@ export function ImageGenerator({
               </>
             )}
           </Button>
+        )}
+
+        {/* 重新生成原因选择弹窗 */}
+        {showRegenDialog && (
+          <div className="absolute top-full left-0 mt-2 z-50 bg-white border rounded-lg shadow-lg p-4 w-64">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-medium">选择重新生成的原因：</p>
+              <button
+                onClick={handleCancelRegenerate}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {REGENERATE_REASONS.map(reason => (
+                <label key={reason.value} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="reason"
+                    value={reason.value}
+                    checked={selectedReason === reason.value}
+                    onChange={(e) => setSelectedReason(e.target.value)}
+                    className="accent-primary"
+                  />
+                  {reason.label}
+                </label>
+              ))}
+            </div>
+            {selectedReason === 'other' && (
+              <Input
+                className="mt-2"
+                placeholder="请输入具体原因"
+                value={customReason}
+                onChange={(e) => setCustomReason(e.target.value)}
+              />
+            )}
+            <div className="flex gap-2 mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={handleCancelRegenerate}
+              >
+                取消
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1"
+                onClick={handleConfirmRegenerate}
+                disabled={!selectedReason || (selectedReason === 'other' && !customReason.trim())}
+              >
+                重新生成
+              </Button>
+            </div>
+          </div>
         )}
       </div>
 

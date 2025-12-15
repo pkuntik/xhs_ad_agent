@@ -8,6 +8,7 @@ export const maxDuration = 60
 interface FeedbackExample {
   prompt: string
   feedback: 'like' | 'dislike'
+  reason?: string  // 用户选择的不满意原因
 }
 
 interface ImageGenerationContext {
@@ -262,7 +263,7 @@ function buildUserMessage(
       lines.push('')
       lines.push('### ✅ 我满意的风格（请参考）：')
       likedPrompts.forEach((ex, i) => {
-        lines.push(`${i + 1}. ${ex.prompt}`)
+        lines.push(`${i + 1}. 提示词: ${ex.prompt}`)
       })
     }
 
@@ -270,7 +271,10 @@ function buildUserMessage(
       lines.push('')
       lines.push('### ❌ 我不满意的风格（请避免）：')
       dislikedPrompts.forEach((ex, i) => {
-        lines.push(`${i + 1}. ${ex.prompt}`)
+        lines.push(`${i + 1}. 提示词: ${ex.prompt}`)
+        if (ex.reason) {
+          lines.push(`   原因: ${ex.reason}`)
+        }
       })
     }
   }
