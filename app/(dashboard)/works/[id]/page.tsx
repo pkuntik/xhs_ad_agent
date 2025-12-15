@@ -152,18 +152,6 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     }
   }
 
-  // 封面反馈回调
-  function handleCoverFeedback(feedback: ImageFeedback) {
-    if (!draftContent?.cover) return
-    setDraftContent({
-      ...draftContent,
-      cover: {
-        ...draftContent.cover,
-        feedback,
-      },
-    })
-  }
-
   // 配图生成回调
   async function handleImageGenerated(index: number, imageUrl: string, imagePrompt: string) {
     if (!work || !draftContent?.images) return
@@ -184,18 +172,6 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     } catch (err) {
       console.error('保存配图失败:', err)
     }
-  }
-
-  // 配图反馈回调
-  function handleImageFeedback(index: number, feedback: ImageFeedback) {
-    if (!draftContent?.images) return
-    const updatedImages = draftContent.images.map((img, i) =>
-      i === index ? { ...img, feedback } : img
-    )
-    setDraftContent({
-      ...draftContent,
-      images: updatedImages,
-    })
   }
 
   if (loading) {
@@ -353,8 +329,6 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
                         allImages: draftContent.images,
                       }}
                       onImageGenerated={handleCoverImageGenerated}
-                      onFeedback={handleCoverFeedback}
-                      currentFeedback={draftContent.cover.feedback}
                       initialImageUrl={draftContent.cover.imageUrl}
                       initialPrompt={draftContent.cover.imagePrompt}
                       faceSeed={faceSeed || undefined}
@@ -403,8 +377,6 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
                           },
                         }}
                         onImageGenerated={(url, prompt) => handleImageGenerated(i, url, prompt)}
-                        onFeedback={(feedback) => handleImageFeedback(i, feedback)}
-                        currentFeedback={img.feedback}
                         initialImageUrl={img.imageUrl}
                         initialPrompt={img.imagePrompt}
                         faceSeed={faceSeed || undefined}
