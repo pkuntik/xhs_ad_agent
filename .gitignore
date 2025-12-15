@@ -6,3 +6,11 @@ node_modules
 
 # production
 /build
+
+# uploaded images
+/public/uploads/
+
+# env files
+.env
+.env.local
+.env*.local

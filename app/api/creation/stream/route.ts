@@ -1,6 +1,8 @@
 import { createAnthropicClient, generateUserId } from '@/lib/anthropic/client'
 import { buildSystemPrompt, buildUserMessage } from '@/lib/anthropic/prompts'
 import type { CreationFormData, LearningData } from '@/types/creation'
+import { deductBalance } from '@/lib/billing/service'
+import { headers } from 'next/headers'
 
 // JSON 字段对应的进度百分比
 const FIELD_PROGRESS: Record<string, { percent: number; label: string }> = {
@@ -30,11 +32,35 @@ export async function POST(request: Request) {
       )
     }
 
+    // 获取当前用户并扣费
+    const headersList = await headers()
+    const userId = headersList.get('x-user-id')
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: '请先登录' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // 扣费
+    const deductResult = await deductBalance(userId, 'ai_generate_full', {
+      relatedType: 'creation',
+      description: '完整AI生成',
+      metadata: { topic: formData.topic },
+    })
+
+    if (!deductResult.success) {
+      return new Response(
+        JSON.stringify({ error: deductResult.error }),
+        { status: 402, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
     // 创建 Anthropic 客户端
     const client = createAnthropicClient()
     const systemPrompt = buildSystemPrompt()
     const userMessage = buildUserMessage(formData, learningData)
-    const userId = generateUserId()
+    const anthropicUserId = generateUserId()
 
     // 创建流式响应
     const encoder = new TextEncoder()
@@ -53,7 +79,7 @@ export async function POST(request: Request) {
               { role: 'user', content: userMessage },
               { role: 'assistant', content: '{' }
             ],
-            metadata: { user_id: userId }
+            metadata: { user_id: anthropicUserId }
           })
 
           let fullText = '{'

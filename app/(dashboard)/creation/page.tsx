@@ -19,6 +19,7 @@ import {
 import { Loader2, Sparkles, Copy, Check, Save, Edit2 } from 'lucide-react'
 import { saveWork } from '@/actions/work'
 import { ImageGenerator } from '@/components/image/ImageGenerator'
+import { processImageUrl } from '@/lib/utils/image'
 import type {
   CreationFormData,
   GenerationResult,
@@ -187,6 +188,35 @@ export default function CreationPage() {
         title: result.title ? { ...result.title, text: editedTitle } : undefined,
         content: result.content ? { ...result.content, body: editedContent } : undefined,
         topics: result.topics ? { ...result.topics, tags: editedTopics.split(/\s+/).filter(Boolean) } : undefined,
+      }
+
+      // 上传图片：如果有 base64 或 blob 图片，先上传获取 URL
+      // 上传封面图片
+      if (updatedResult.cover?.imageUrl) {
+        const coverUrl = await processImageUrl(
+          updatedResult.cover.imageUrl,
+          `cover-${Date.now()}`
+        )
+        if (coverUrl) {
+          updatedResult.cover = { ...updatedResult.cover, imageUrl: coverUrl }
+        }
+      }
+
+      // 上传配图
+      if (updatedResult.images && updatedResult.images.length > 0) {
+        const uploadedImages = await Promise.all(
+          updatedResult.images.map(async (img, index) => {
+            if (img.imageUrl) {
+              const imageUrl = await processImageUrl(
+                img.imageUrl,
+                `image-${index + 1}-${Date.now()}`
+              )
+              return { ...img, imageUrl: imageUrl || img.imageUrl }
+            }
+            return img
+          })
+        )
+        updatedResult.images = uploadedImages
       }
 
       const response = await saveWork({

@@ -13,8 +13,8 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
-  const [filterUserId, setFilterUserId] = useState<string>('')
-  const [filterType, setFilterType] = useState<string>('')
+  const [filterUserId, setFilterUserId] = useState<string>('all')
+  const [filterType, setFilterType] = useState<string>('all')
 
   useEffect(() => {
     const loadData = async () => {
@@ -32,8 +32,8 @@ export default function TransactionsPage() {
   const loadFiltered = async () => {
     setLoading(true)
     const filter: Record<string, string> = {}
-    if (filterUserId) filter.userId = filterUserId
-    if (filterType) filter.type = filterType
+    if (filterUserId && filterUserId !== 'all') filter.userId = filterUserId
+    if (filterType && filterType !== 'all') filter.type = filterType
     const data = await getTransactions(filter as any)
     setTransactions(data)
     setLoading(false)
@@ -67,7 +67,7 @@ export default function TransactionsPage() {
             <SelectValue placeholder="全部用户" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">全部用户</SelectItem>
+            <SelectItem value="all">全部用户</SelectItem>
             {users.map(user => (
               <SelectItem key={user._id.toString()} value={user._id.toString()}>
                 {user.username}
@@ -81,7 +81,7 @@ export default function TransactionsPage() {
             <SelectValue placeholder="全部类型" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">全部类型</SelectItem>
+            <SelectItem value="all">全部类型</SelectItem>
             <SelectItem value="recharge">充值</SelectItem>
             <SelectItem value="consume">消费</SelectItem>
           </SelectContent>
