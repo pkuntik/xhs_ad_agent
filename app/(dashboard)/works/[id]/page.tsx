@@ -259,11 +259,23 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">封面规划</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <p><strong>类型：</strong>{work.draftContent.cover.type}</p>
-                <p><strong>主视觉：</strong>{work.draftContent.cover.mainVisual}</p>
-                <p><strong>文案：</strong>{work.draftContent.cover.copywriting}</p>
-                <p><strong>配色：</strong>{work.draftContent.cover.colorScheme}</p>
+              <CardContent className="space-y-4">
+                {/* 显示封面图片 */}
+                {work.draftContent.cover.imageUrl && (
+                  <div className="relative aspect-[3/4] max-w-sm overflow-hidden rounded-lg border">
+                    <img
+                      src={work.draftContent.cover.imageUrl}
+                      alt="封面图片"
+                      className="object-cover w-full h-full"
+                    />
+                  </div>
+                )}
+                <div className="space-y-2 text-sm">
+                  <p><strong>类型：</strong>{work.draftContent.cover.type}</p>
+                  <p><strong>主视觉：</strong>{work.draftContent.cover.mainVisual}</p>
+                  <p><strong>文案：</strong>{work.draftContent.cover.copywriting}</p>
+                  <p><strong>配色：</strong>{work.draftContent.cover.colorScheme}</p>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -272,14 +284,26 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
           {work.draftContent?.images && work.draftContent.images.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">配图规划</CardTitle>
+                <CardTitle className="text-base">配图 ({work.draftContent.images.length} 张)</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-4">
                 {work.draftContent.images.map((img, i) => (
-                  <div key={i} className="p-3 bg-muted/50 rounded-md text-sm">
-                    <p className="font-medium">图 {img.index || i + 1}</p>
-                    <p>{img.content}</p>
-                    {img.overlay && <p className="text-muted-foreground">文字：{img.overlay}</p>}
+                  <div key={i} className="p-3 bg-muted/50 rounded-md space-y-3">
+                    {/* 显示配图 */}
+                    {img.imageUrl && (
+                      <div className="relative aspect-[3/4] max-w-sm overflow-hidden rounded-lg border">
+                        <img
+                          src={img.imageUrl}
+                          alt={`配图 ${img.index || i + 1}`}
+                          className="object-cover w-full h-full"
+                        />
+                      </div>
+                    )}
+                    <div className="text-sm">
+                      <p className="font-medium">图 {img.index || i + 1}: {img.type}</p>
+                      <p className="text-muted-foreground">{img.content}</p>
+                      {img.overlay && <p className="text-muted-foreground">文字：{img.overlay}</p>}
+                    </div>
                   </div>
                 ))}
               </CardContent>
