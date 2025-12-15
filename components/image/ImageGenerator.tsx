@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Loader2, Sparkles, RefreshCw, X, ImagePlus } from 'lucide-react'
+import { Loader2, Sparkles, RefreshCw, X, ImagePlus, ZoomIn } from 'lucide-react'
 import { uploadBase64Image } from '@/lib/utils/image'
 import type { GenerationResult, ImagePlan, CreationFormData } from '@/types/creation'
 
@@ -88,6 +88,9 @@ export function ImageGenerator({
   const [referenceImage, setReferenceImage] = useState<string | null>(null)
   const [referenceImagePreview, setReferenceImagePreview] = useState<string | null>(null)
   const [isAnalyzingReference, setIsAnalyzingReference] = useState(false)
+
+  // 图片放大查看状态
+  const [showZoomModal, setShowZoomModal] = useState(false)
 
   React.useEffect(() => {
     if (initialImageUrl) {
@@ -468,12 +471,20 @@ export function ImageGenerator({
     <div className={compact ? "space-y-2" : "space-y-4"}>
       {/* 已有图片时先显示图片 */}
       {imageUrl && compact && (
-        <div className="relative aspect-[3/4] bg-gray-100 rounded-lg overflow-hidden">
+        <div className="relative aspect-[3/4] bg-gray-100 rounded-lg overflow-hidden group">
           <img
             src={imageUrl}
             alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
             className="w-full h-full object-cover"
           />
+          {/* 放大按钮 */}
+          <button
+            onClick={() => setShowZoomModal(true)}
+            className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+            title="查看大图"
+          >
+            <ZoomIn className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
@@ -642,11 +653,21 @@ export function ImageGenerator({
       {imageUrl && !compact && (
         <Card>
           <CardContent className="p-4">
-            <img
-              src={imageUrl}
-              alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
-              className="w-full h-auto rounded-lg"
-            />
+            <div className="relative group">
+              <img
+                src={imageUrl}
+                alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
+                className="w-full h-auto rounded-lg"
+              />
+              {/* 放大按钮 */}
+              <button
+                onClick={() => setShowZoomModal(true)}
+                className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                title="查看大图"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -655,6 +676,27 @@ export function ImageGenerator({
       {!imageUrl && compact && (
         <div className="aspect-[3/4] bg-muted/50 rounded-lg flex items-center justify-center">
           <span className="text-xs text-muted-foreground">点击生成图片</span>
+        </div>
+      )}
+
+      {/* 图片放大模态框 */}
+      {showZoomModal && imageUrl && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setShowZoomModal(false)}
+        >
+          <button
+            onClick={() => setShowZoomModal(false)}
+            className="absolute top-4 right-4 p-2 bg-white/10 text-white rounded-full hover:bg-white/20 transition-colors"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          <img
+            src={imageUrl}
+            alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
+            className="max-w-full max-h-full object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>
