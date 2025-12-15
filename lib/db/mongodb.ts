@@ -44,4 +44,8 @@ export const COLLECTIONS = {
   LEADS: 'leads',
   TASKS: 'tasks',
   AI_STRATEGIES: 'ai_strategies',
+  // 用户和扣费系统
+  USERS: 'users',
+  TRANSACTIONS: 'transactions',
+  PRICING: 'pricing',
 } as const

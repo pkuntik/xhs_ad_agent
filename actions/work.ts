@@ -7,6 +7,8 @@ import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { generateVerifyConfig } from '@/lib/xhs/signature'
 import type { Work, CreateWorkInput, WorkStatus, BindNoteInput } from '@/types/work'
 import type { GenerationResult } from '@/types/creation'
+import { getCurrentUserId } from '@/lib/auth/session'
+import { deductBalance } from '@/lib/billing/service'
 
 /**
  * 获取作品列表
@@ -365,6 +367,22 @@ export async function getPublishConfig(code: string): Promise<{
  */
 export async function markWorkScanned(code: string): Promise<{ success: boolean; error?: string }> {
   try {
+    // 获取当前用户并扣费
+    const userId = await getCurrentUserId()
+    if (!userId) {
+      return { success: false, error: '请先登录' }
+    }
+
+    const deductResult = await deductBalance(userId, 'publish_scan', {
+      relatedType: 'work',
+      description: '扫码发布',
+      metadata: { publishCode: code },
+    })
+
+    if (!deductResult.success) {
+      return { success: false, error: deductResult.error }
+    }
+
     const db = await getDb()
 
     const result = await db.collection(COLLECTIONS.WORKS).updateOne(

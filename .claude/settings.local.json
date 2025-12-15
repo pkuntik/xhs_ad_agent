@@ -12,7 +12,8 @@
       "Bash(find:*)",
       "Bash(grep:*)",
       "Bash(pnpm:*)",
-      "Bash(npx:*)"
+      "Bash(npx:*)",
+      "Bash(git -C \"e:\\2025\\xhs_ad_agent\" log --oneline -20)"
     ]
   }
 }

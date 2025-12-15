@@ -4,6 +4,8 @@ import { createAnthropicClient, generateUserId } from '@/lib/anthropic/client'
 import { buildSystemPrompt, buildUserMessage } from '@/lib/anthropic/prompts'
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
 import type { CreationFormData, LearningData, GenerationResult } from '@/types/creation'
+import { getCurrentUserId } from '@/lib/auth/session'
+import { deductBalance } from '@/lib/billing/service'
 
 /**
  * 生成小红书笔记内容
@@ -18,11 +20,27 @@ export async function generateContent(
       return { success: false, error: '请填写必填字段' }
     }
 
+    // 获取当前用户并扣费
+    const userId = await getCurrentUserId()
+    if (!userId) {
+      return { success: false, error: '请先登录' }
+    }
+
+    const deductResult = await deductBalance(userId, 'ai_generate_full', {
+      relatedType: 'creation',
+      description: '完整AI生成',
+      metadata: { topic: formData.topic },
+    })
+
+    if (!deductResult.success) {
+      return { success: false, error: deductResult.error }
+    }
+
     // 创建 Anthropic 客户端
     const client = createAnthropicClient()
     const systemPrompt = buildSystemPrompt()
     const userMessage = buildUserMessage(formData, learningData)
-    const userId = generateUserId()
+    const anthropicUserId = generateUserId()
 
     // 使用流式请求（Opus 模型需要）
     const stream = client.messages.stream({
@@ -33,7 +51,7 @@ export async function generateContent(
         { role: 'user', content: userMessage },
         { role: 'assistant', content: '{' }  // 预填充确保 JSON 格式
       ],
-      metadata: { user_id: userId }
+      metadata: { user_id: anthropicUserId }
     })
 
     // 等待流完成并收集文本
@@ -96,6 +114,22 @@ export async function generateImage(params: {
 
     if (!prompt) {
       return { success: false, error: '请提供图片生成提示词' }
+    }
+
+    // 获取当前用户并扣费
+    const userId = await getCurrentUserId()
+    if (!userId) {
+      return { success: false, error: '请先登录' }
+    }
+
+    const deductResult = await deductBalance(userId, 'image_generate', {
+      relatedType: 'image',
+      description: '生成图片',
+      metadata: { imageType, topic: context?.topic },
+    })
+
+    if (!deductResult.success) {
+      return { success: false, error: deductResult.error }
     }
 
     const geminiApiKey = process.env.GEMINI_API_KEY

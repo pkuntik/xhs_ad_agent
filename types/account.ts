@@ -13,9 +13,12 @@ export interface AccountThresholds {
 // 小红书账号
 export interface XhsAccount {
   _id: ObjectId
+  // 关联系统用户
+  userId?: ObjectId               // 系统用户 ID (关联 users 集合)
+
   // 基础信息
   name: string                    // 账号名称/备注
-  userId: string                  // 小红书用户 ID
+  visitorUserId: string           // 小红书用户 ID (原 userId)
   cookie: string                  // 登录 Cookie (加密存储)
 
   // 聚光平台信息

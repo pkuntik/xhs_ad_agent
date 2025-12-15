@@ -5,6 +5,9 @@ import { ObjectId } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { validateCookie } from '@/lib/xhs/auth'
 import type { XhsAccount, AccountListItem, CreateAccountInput, AccountThresholds } from '@/types/account'
+import type { User } from '@/types/user'
+import { getCurrentUserId } from '@/lib/auth/session'
+import { deductBalance } from '@/lib/billing/service'
 
 // Cookie 验证结果
 export interface VerifyCookieResult {
@@ -38,7 +41,7 @@ export async function verifyCookie(cookie: string): Promise<VerifyCookieResult> 
     const db = await getDb()
     const existing = await db
       .collection(COLLECTIONS.ACCOUNTS)
-      .findOne({ userId: cookieInfo.userId })
+      .findOne({ visitorUserId: cookieInfo.userId })
     if (existing) {
       return { success: false, error: '该账号已添加过了' }
     }
@@ -94,19 +97,50 @@ export async function createAccount(input: CreateAccountInput): Promise<{ succes
   try {
     const { name, cookie, dailyBudget = 5000, defaultBidAmount = 30, thresholds } = input
 
+    // 获取当前用户
+    const currentUserId = await getCurrentUserId()
+    if (!currentUserId) {
+      return { success: false, error: '请先登录' }
+    }
+
+    const db = await getDb()
+
+    // 获取用户信息检查账号数量限制
+    const user = await db.collection<User>(COLLECTIONS.USERS).findOne({
+      _id: new ObjectId(currentUserId)
+    })
+
+    if (!user) {
+      return { success: false, error: '用户不存在' }
+    }
+
+    // 检查是否超出免费额度
+    if (user.currentAccounts >= user.maxAccounts) {
+      // 需要扣费
+      const deductResult = await deductBalance(currentUserId, 'account_add', {
+        relatedType: 'account',
+        description: '添加账号(超额)',
+      })
+
+      if (!deductResult.success) {
+        return {
+          success: false,
+          error: `账号数量已达上限(${user.maxAccounts}个)，${deductResult.error}`
+        }
+      }
+    }
+
     // 验证 Cookie 有效性
     const cookieInfo = await validateCookie(cookie)
     if (!cookieInfo.valid) {
       return { success: false, error: cookieInfo.errorMessage || 'Cookie 无效或已过期' }
     }
 
-    const db = await getDb()
-
     // 检查是否已存在（通过 userId 去重）
     if (cookieInfo.userId) {
       const existing = await db
         .collection(COLLECTIONS.ACCOUNTS)
-        .findOne({ userId: cookieInfo.userId })
+        .findOne({ visitorUserId: cookieInfo.userId })
       if (existing) {
         return { success: false, error: '该账号已存在' }
       }
@@ -116,9 +150,10 @@ export async function createAccount(input: CreateAccountInput): Promise<{ succes
     const accountName = name?.trim() || cookieInfo.nickname || '未命名账号'
 
     const account: Omit<XhsAccount, '_id'> = {
+      userId: new ObjectId(currentUserId),  // 关联当前用户
       name: accountName,
-      userId: cookieInfo.userId || '',
-      cookie: cookie,  // 直接存储，不加密
+      visitorUserId: cookieInfo.userId || '',
+      cookie: cookie,
       advertiserId: cookieInfo.advertiserId || '',
       balance: cookieInfo.balance || 0,
       autoManaged: false,
@@ -136,6 +171,15 @@ export async function createAccount(input: CreateAccountInput): Promise<{ succes
     }
 
     const result = await db.collection(COLLECTIONS.ACCOUNTS).insertOne(account)
+
+    // 更新用户账号计数
+    await db.collection<User>(COLLECTIONS.USERS).updateOne(
+      { _id: new ObjectId(currentUserId) },
+      {
+        $inc: { currentAccounts: 1 },
+        $set: { updatedAt: new Date() },
+      }
+    )
 
     revalidatePath('/accounts')
     return { success: true, id: result.insertedId.toString() }

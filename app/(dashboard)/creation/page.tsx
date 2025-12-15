@@ -18,11 +18,13 @@ import {
 } from '@/components/ui/select'
 import { Loader2, Sparkles, Copy, Check, Save, Edit2 } from 'lucide-react'
 import { saveWork } from '@/actions/work'
+import { ImageGenerator } from '@/components/image/ImageGenerator'
 import type {
   CreationFormData,
   GenerationResult,
   PromotionGoal,
   ContentScene,
+  ImageFeedback,
 } from '@/types/creation'
 
 const PROMOTION_GOALS: PromotionGoal[] = [
@@ -76,6 +78,9 @@ export default function CreationPage() {
   const [editedTitle, setEditedTitle] = useState('')
   const [editedContent, setEditedContent] = useState('')
   const [editedTopics, setEditedTopics] = useState('')
+
+  // AI 图片生成相关状态
+  const [faceSeed, setFaceSeed] = useState<string | null>(null)
 
   async function handleGenerate() {
     if (!formData.topic.trim()) {
@@ -209,6 +214,59 @@ export default function CreationPage() {
     navigator.clipboard.writeText(text)
     setCopied(key)
     setTimeout(() => setCopied(null), 2000)
+  }
+
+  // 封面图片生成回调
+  function handleCoverImageGenerated(imageUrl: string, imagePrompt: string) {
+    if (result?.cover) {
+      setResult({
+        ...result,
+        cover: {
+          ...result.cover,
+          imageUrl,
+          imagePrompt,
+        },
+      })
+    }
+  }
+
+  // 封面反馈回调
+  function handleCoverFeedback(feedback: ImageFeedback) {
+    if (result?.cover) {
+      setResult({
+        ...result,
+        cover: {
+          ...result.cover,
+          feedback,
+        },
+      })
+    }
+  }
+
+  // 配图生成回调
+  function handleImageGenerated(index: number, imageUrl: string, imagePrompt: string) {
+    if (result?.images) {
+      const updatedImages = result.images.map((img, i) =>
+        i === index ? { ...img, imageUrl, imagePrompt } : img
+      )
+      setResult({
+        ...result,
+        images: updatedImages,
+      })
+    }
+  }
+
+  // 配图反馈回调
+  function handleImageFeedback(index: number, feedback: ImageFeedback) {
+    if (result?.images) {
+      const updatedImages = result.images.map((img, i) =>
+        i === index ? { ...img, feedback } : img
+      )
+      setResult({
+        ...result,
+        images: updatedImages,
+      })
+    }
   }
 
   return (
@@ -544,11 +602,32 @@ export default function CreationPage() {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">封面规划</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
-                    <p><strong>类型：</strong>{result.cover.type}</p>
-                    <p><strong>主视觉：</strong>{result.cover.mainVisual}</p>
-                    <p><strong>文案：</strong>{result.cover.copywriting}</p>
-                    <p><strong>配色：</strong>{result.cover.colorScheme}</p>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2 text-sm">
+                      <p><strong>类型：</strong>{result.cover.type}</p>
+                      <p><strong>主视觉：</strong>{result.cover.mainVisual}</p>
+                      <p><strong>文案：</strong>{result.cover.copywriting}</p>
+                      <p><strong>配色：</strong>{result.cover.colorScheme}</p>
+                    </div>
+                    <ImageGenerator
+                      prompt={result.cover.mainVisual}
+                      imageType="cover"
+                      context={{
+                        formData,
+                        positioning: result.positioning,
+                        cover: result.cover,
+                        title: result.title,
+                        content: result.content,
+                        allImages: result.images,
+                      }}
+                      onImageGenerated={handleCoverImageGenerated}
+                      onFeedback={handleCoverFeedback}
+                      currentFeedback={result.cover.feedback}
+                      initialImageUrl={result.cover.imageUrl}
+                      initialPrompt={result.cover.imagePrompt}
+                      faceSeed={faceSeed || undefined}
+                      onFaceSeedGenerated={setFaceSeed}
+                    />
                   </CardContent>
                 </Card>
               )}
@@ -557,14 +636,42 @@ export default function CreationPage() {
               {result.images && result.images.length > 0 && (
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-base">配图规划</CardTitle>
+                    <CardTitle className="text-base">配图规划 ({result.images.length} 张)</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
+                  <CardContent className="space-y-6">
                     {result.images.map((img, i) => (
-                      <div key={i} className="p-3 bg-muted/50 rounded-md text-sm">
-                        <p className="font-medium">图 {img.index || i + 1}</p>
-                        <p>{img.content}</p>
-                        {img.overlay && <p className="text-muted-foreground">文字：{img.overlay}</p>}
+                      <div key={i} className="p-4 bg-muted/50 rounded-lg space-y-4">
+                        <div className="text-sm">
+                          <p className="font-medium mb-2">图 {img.index || i + 1}: {img.type}</p>
+                          <p className="text-muted-foreground">{img.content}</p>
+                          {img.overlay && <p className="text-muted-foreground mt-1">文字：{img.overlay}</p>}
+                        </div>
+                        <ImageGenerator
+                          prompt={img.content}
+                          imageType="content"
+                          context={{
+                            formData,
+                            positioning: result.positioning,
+                            cover: result.cover,
+                            title: result.title,
+                            content: result.content,
+                            allImages: result.images,
+                            currentImage: {
+                              index: img.index || i + 1,
+                              type: img.type,
+                              content: img.content,
+                              overlay: img.overlay,
+                              tips: img.tips,
+                            },
+                          }}
+                          onImageGenerated={(url, prompt) => handleImageGenerated(i, url, prompt)}
+                          onFeedback={(feedback) => handleImageFeedback(i, feedback)}
+                          currentFeedback={img.feedback}
+                          initialImageUrl={img.imageUrl}
+                          initialPrompt={img.imagePrompt}
+                          faceSeed={faceSeed || undefined}
+                          onFaceSeedGenerated={setFaceSeed}
+                        />
                       </div>
                     ))}
                   </CardContent>
