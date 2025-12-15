@@ -33,6 +33,7 @@ interface PromptGenerationRequest {
   context: ImageGenerationContext
   feedbackExamples?: FeedbackExample[]
   faceSeed?: string
+  referenceImageAnalysis?: string  // Gemini 分析的参考图风格
 }
 
 function generateFaceSeed(): string {
@@ -139,7 +140,8 @@ function buildUserMessage(
   imageType: 'cover' | 'content',
   context: ImageGenerationContext,
   feedbackExamples?: FeedbackExample[],
-  faceSeed?: string
+  faceSeed?: string,
+  referenceImageAnalysis?: string
 ): string {
   const lines: string[] = []
   const { formData, positioning, cover, title, content, allImages, currentImage, visualStyle } = context
@@ -279,6 +281,15 @@ function buildUserMessage(
     }
   }
 
+  // 参考图风格分析
+  if (referenceImageAnalysis) {
+    lines.push('')
+    lines.push('## 参考图风格分析（请参考）')
+    lines.push(referenceImageAnalysis)
+    lines.push('')
+    lines.push('请在生成提示词时融入上述参考图的风格特征。')
+  }
+
   lines.push('')
   lines.push('## 人脸种子')
   lines.push(`本次笔记的人脸随机种子：${faceSeed}`)
@@ -288,14 +299,14 @@ function buildUserMessage(
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageType, context, feedbackExamples, faceSeed: providedFaceSeed }: PromptGenerationRequest = await req.json()
+    const { imageType, context, feedbackExamples, faceSeed: providedFaceSeed, referenceImageAnalysis }: PromptGenerationRequest = await req.json()
 
     const client = createAnthropicClient()
     const userId = generateUserId()
 
     const faceSeed = providedFaceSeed || generateFaceSeed()
     const systemPrompt = buildSystemPrompt(imageType)
-    const userMessage = buildUserMessage(imageType, context, feedbackExamples, faceSeed)
+    const userMessage = buildUserMessage(imageType, context, feedbackExamples, faceSeed, referenceImageAnalysis)
 
     const response = await client.messages.create({
       model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5-20250929',

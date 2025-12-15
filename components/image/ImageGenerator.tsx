@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Loader2, Sparkles, RefreshCw, X } from 'lucide-react'
+import { Loader2, Sparkles, RefreshCw, X, ImagePlus } from 'lucide-react'
 import { uploadBase64Image } from '@/lib/utils/image'
 import type { GenerationResult, ImagePlan, CreationFormData } from '@/types/creation'
 
@@ -84,6 +84,11 @@ export function ImageGenerator({
   const [customReason, setCustomReason] = useState('')
   const [feedbackHistory, setFeedbackHistory] = useState<FeedbackWithReason[]>([])
 
+  // 参考图相关状态
+  const [referenceImage, setReferenceImage] = useState<string | null>(null)
+  const [referenceImagePreview, setReferenceImagePreview] = useState<string | null>(null)
+  const [isAnalyzingReference, setIsAnalyzingReference] = useState(false)
+
   React.useEffect(() => {
     if (initialImageUrl) {
       if (initialImageUrl.startsWith('data:')) {
@@ -118,10 +123,36 @@ export function ImageGenerator({
       if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
         URL.revokeObjectURL(createdBlobUrl)
       }
+      if (referenceImagePreview && referenceImagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(referenceImagePreview)
+      }
     }
-  }, [createdBlobUrl])
+  }, [createdBlobUrl, referenceImagePreview])
 
-  const handleGenerate = async (additionalFeedback?: FeedbackWithReason) => {
+  // 处理参考图上传
+  const handleReferenceImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string
+        setReferenceImage(base64)
+        setReferenceImagePreview(URL.createObjectURL(file))
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  // 清除参考图
+  const clearReferenceImage = () => {
+    setReferenceImage(null)
+    if (referenceImagePreview) {
+      URL.revokeObjectURL(referenceImagePreview)
+      setReferenceImagePreview(null)
+    }
+  }
+
+  const handleGenerate = async (additionalFeedback?: FeedbackWithReason, referenceImageAnalysis?: string) => {
     if (!prompt.trim()) {
       setError('请提供图片描述')
       return
@@ -150,6 +181,7 @@ export function ImageGenerator({
           context,
           feedbackExamples: allFeedback,
           faceSeed,
+          referenceImageAnalysis,
         }),
       })
 
@@ -396,8 +428,32 @@ export function ImageGenerator({
     setSelectedReason('')
     setCustomReason('')
 
-    // 执行生成，传入本次反馈
-    await handleGenerate(currentFeedback)
+    // 如果有参考图，先分析
+    let analysisResult: string | undefined
+    if (referenceImage) {
+      setIsAnalyzingReference(true)
+      try {
+        const analyzeResponse = await fetch('/api/image/analyze-reference', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: referenceImage }),
+        })
+        if (analyzeResponse.ok) {
+          const analyzeData = await analyzeResponse.json()
+          analysisResult = analyzeData.analysis
+        }
+      } catch (e) {
+        console.error('Failed to analyze reference image:', e)
+      } finally {
+        setIsAnalyzingReference(false)
+      }
+    }
+
+    // 清除参考图（已分析完毕）
+    clearReferenceImage()
+
+    // 执行生成，传入本次反馈和参考图分析结果
+    await handleGenerate(currentFeedback, analysisResult)
   }
 
   // 取消重新生成
@@ -405,6 +461,7 @@ export function ImageGenerator({
     setShowRegenDialog(false)
     setSelectedReason('')
     setCustomReason('')
+    clearReferenceImage()
   }
 
   return (
@@ -498,6 +555,43 @@ export function ImageGenerator({
                 onChange={(e) => setCustomReason(e.target.value)}
               />
             )}
+            {/* 参考图上传区域 */}
+            <div className="mt-3 pt-3 border-t">
+              <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                <ImagePlus className="h-3 w-3" />
+                上传参考图（可选）
+              </p>
+              {referenceImagePreview ? (
+                <div className="relative">
+                  <img
+                    src={referenceImagePreview}
+                    alt="参考图"
+                    className="w-full h-20 object-cover rounded border"
+                  />
+                  <button
+                    onClick={clearReferenceImage}
+                    className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-0.5 hover:bg-black/70"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <label className="block w-full h-16 border-2 border-dashed rounded cursor-pointer hover:border-primary/50 hover:bg-gray-50 transition-colors">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleReferenceImageUpload}
+                  />
+                  <div className="h-full flex items-center justify-center text-xs text-gray-400">
+                    点击上传图片
+                  </div>
+                </label>
+              )}
+              <p className="text-xs text-gray-400 mt-1">
+                我会分析参考图的风格来改进生成
+              </p>
+            </div>
             <div className="flex gap-2 mt-4">
               <Button
                 variant="outline"
@@ -511,9 +605,9 @@ export function ImageGenerator({
                 size="sm"
                 className="flex-1"
                 onClick={handleConfirmRegenerate}
-                disabled={!selectedReason || (selectedReason === 'other' && !customReason.trim())}
+                disabled={!selectedReason || (selectedReason === 'other' && !customReason.trim()) || isAnalyzingReference}
               >
-                重新生成
+                {isAnalyzingReference ? '分析参考图中...' : '重新生成'}
               </Button>
             </div>
           </div>
