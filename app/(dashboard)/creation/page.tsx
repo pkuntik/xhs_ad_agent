@@ -632,32 +632,39 @@ export default function CreationPage() {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">封面规划</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2 text-sm">
-                      <p><strong>类型：</strong>{result.cover.type}</p>
-                      <p><strong>主视觉：</strong>{result.cover.mainVisual}</p>
-                      <p><strong>文案：</strong>{result.cover.copywriting}</p>
-                      <p><strong>配色：</strong>{result.cover.colorScheme}</p>
+                  <CardContent>
+                    <div className="flex gap-4">
+                      {/* 左侧：图片生成 */}
+                      <div className="w-40 flex-shrink-0">
+                        <ImageGenerator
+                          prompt={result.cover.mainVisual}
+                          imageType="cover"
+                          context={{
+                            formData,
+                            positioning: result.positioning,
+                            cover: result.cover,
+                            title: result.title,
+                            content: result.content,
+                            allImages: result.images,
+                          }}
+                          onImageGenerated={handleCoverImageGenerated}
+                          onFeedback={handleCoverFeedback}
+                          currentFeedback={result.cover.feedback}
+                          initialImageUrl={result.cover.imageUrl}
+                          initialPrompt={result.cover.imagePrompt}
+                          faceSeed={faceSeed || undefined}
+                          onFaceSeedGenerated={setFaceSeed}
+                          compact
+                        />
+                      </div>
+                      {/* 右侧：规划信息 */}
+                      <div className="flex-1 space-y-2 text-sm">
+                        <p><strong>类型：</strong>{result.cover.type}</p>
+                        <p><strong>主视觉：</strong>{result.cover.mainVisual}</p>
+                        <p><strong>文案：</strong>{result.cover.copywriting}</p>
+                        <p><strong>配色：</strong>{result.cover.colorScheme}</p>
+                      </div>
                     </div>
-                    <ImageGenerator
-                      prompt={result.cover.mainVisual}
-                      imageType="cover"
-                      context={{
-                        formData,
-                        positioning: result.positioning,
-                        cover: result.cover,
-                        title: result.title,
-                        content: result.content,
-                        allImages: result.images,
-                      }}
-                      onImageGenerated={handleCoverImageGenerated}
-                      onFeedback={handleCoverFeedback}
-                      currentFeedback={result.cover.feedback}
-                      initialImageUrl={result.cover.imageUrl}
-                      initialPrompt={result.cover.imagePrompt}
-                      faceSeed={faceSeed || undefined}
-                      onFaceSeedGenerated={setFaceSeed}
-                    />
                   </CardContent>
                 </Card>
               )}
@@ -668,40 +675,45 @@ export default function CreationPage() {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">配图规划 ({result.images.length} 张)</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-6">
+                  <CardContent className="space-y-4">
                     {result.images.map((img, i) => (
-                      <div key={i} className="p-4 bg-muted/50 rounded-lg space-y-4">
-                        <div className="text-sm">
+                      <div key={i} className="flex gap-4 p-3 bg-muted/50 rounded-lg">
+                        {/* 左侧：图片生成 */}
+                        <div className="w-40 flex-shrink-0">
+                          <ImageGenerator
+                            prompt={img.content}
+                            imageType="content"
+                            context={{
+                              formData,
+                              positioning: result.positioning,
+                              cover: result.cover,
+                              title: result.title,
+                              content: result.content,
+                              allImages: result.images,
+                              currentImage: {
+                                index: img.index || i + 1,
+                                type: img.type,
+                                content: img.content,
+                                overlay: img.overlay,
+                                tips: img.tips,
+                              },
+                            }}
+                            onImageGenerated={(url, prompt) => handleImageGenerated(i, url, prompt)}
+                            onFeedback={(feedback) => handleImageFeedback(i, feedback)}
+                            currentFeedback={img.feedback}
+                            initialImageUrl={img.imageUrl}
+                            initialPrompt={img.imagePrompt}
+                            faceSeed={faceSeed || undefined}
+                            onFaceSeedGenerated={setFaceSeed}
+                            compact
+                          />
+                        </div>
+                        {/* 右侧：规划信息 */}
+                        <div className="flex-1 text-sm">
                           <p className="font-medium mb-2">图 {img.index || i + 1}: {img.type}</p>
                           <p className="text-muted-foreground">{img.content}</p>
                           {img.overlay && <p className="text-muted-foreground mt-1">文字：{img.overlay}</p>}
                         </div>
-                        <ImageGenerator
-                          prompt={img.content}
-                          imageType="content"
-                          context={{
-                            formData,
-                            positioning: result.positioning,
-                            cover: result.cover,
-                            title: result.title,
-                            content: result.content,
-                            allImages: result.images,
-                            currentImage: {
-                              index: img.index || i + 1,
-                              type: img.type,
-                              content: img.content,
-                              overlay: img.overlay,
-                              tips: img.tips,
-                            },
-                          }}
-                          onImageGenerated={(url, prompt) => handleImageGenerated(i, url, prompt)}
-                          onFeedback={(feedback) => handleImageFeedback(i, feedback)}
-                          currentFeedback={img.feedback}
-                          initialImageUrl={img.imageUrl}
-                          initialPrompt={img.imagePrompt}
-                          faceSeed={faceSeed || undefined}
-                          onFaceSeedGenerated={setFaceSeed}
-                        />
                       </div>
                     ))}
                   </CardContent>

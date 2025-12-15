@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server'
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
+import { headers } from 'next/headers'
+import { deductBalance } from '@/lib/billing/service'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -33,6 +35,30 @@ export async function POST(req: NextRequest) {
       return Response.json(
         { error: '请提供图片生成提示词' },
         { status: 400 }
+      )
+    }
+
+    // 获取当前用户并扣费
+    const headersList = await headers()
+    const userId = headersList.get('x-user-id')
+    if (!userId) {
+      return Response.json(
+        { error: '请先登录' },
+        { status: 401 }
+      )
+    }
+
+    // 扣费
+    const deductResult = await deductBalance(userId, 'image_generate', {
+      relatedType: 'image',
+      description: '生成图片',
+      metadata: { imageType, topic: context?.topic },
+    })
+
+    if (!deductResult.success) {
+      return Response.json(
+        { error: deductResult.error },
+        { status: 402 }
       )
     }
 

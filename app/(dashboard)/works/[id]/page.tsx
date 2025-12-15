@@ -10,8 +10,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Copy, Check, ExternalLink, Edit2, Save, ArrowLeft } from 'lucide-react'
-import { getWorkById, updateWorkContent, bindPublishedNote } from '@/actions/work'
+import { getWorkById, updateWorkContent, bindPublishedNote, updateWorkImages } from '@/actions/work'
+import { ImageGenerator } from '@/components/image/ImageGenerator'
 import type { Work } from '@/types/work'
+import type { ImageFeedback, GenerationResult } from '@/types/creation'
 
 const statusMap = {
   unused: { label: '未使用', variant: 'secondary' as const },
@@ -40,6 +42,10 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
   const [noteUrl, setNoteUrl] = useState('')
   const [binding, setBinding] = useState(false)
 
+  // AI 图片生成相关状态
+  const [faceSeed, setFaceSeed] = useState<string | null>(null)
+  const [draftContent, setDraftContent] = useState<GenerationResult | null>(null)
+
   useEffect(() => {
     async function loadWork() {
       try {
@@ -51,6 +57,10 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
           setEditedContent(data.content || data.draftContent?.content?.body || '')
           setEditedTopics(data.tags?.join(' ') || data.draftContent?.topics?.tags.join(' ') || '')
           setNoteUrl(data.noteUrl || '')
+          // 初始化 draftContent 用于图片生成
+          if (data.draftContent) {
+            setDraftContent(data.draftContent as GenerationResult)
+          }
         } else {
           setError('作品不存在')
         }
@@ -117,6 +127,75 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     } finally {
       setBinding(false)
     }
+  }
+
+  // 封面图片生成回调
+  async function handleCoverImageGenerated(imageUrl: string, imagePrompt: string) {
+    if (!work || !draftContent?.cover) return
+
+    const updatedDraftContent = {
+      ...draftContent,
+      cover: {
+        ...draftContent.cover,
+        imageUrl,
+        imagePrompt,
+      },
+    }
+    setDraftContent(updatedDraftContent)
+
+    // 保存到数据库
+    try {
+      await updateWorkImages(work._id.toString(), updatedDraftContent)
+      setWork({ ...work, draftContent: updatedDraftContent })
+    } catch (err) {
+      console.error('保存封面图片失败:', err)
+    }
+  }
+
+  // 封面反馈回调
+  function handleCoverFeedback(feedback: ImageFeedback) {
+    if (!draftContent?.cover) return
+    setDraftContent({
+      ...draftContent,
+      cover: {
+        ...draftContent.cover,
+        feedback,
+      },
+    })
+  }
+
+  // 配图生成回调
+  async function handleImageGenerated(index: number, imageUrl: string, imagePrompt: string) {
+    if (!work || !draftContent?.images) return
+
+    const updatedImages = draftContent.images.map((img, i) =>
+      i === index ? { ...img, imageUrl, imagePrompt } : img
+    )
+    const updatedDraftContent = {
+      ...draftContent,
+      images: updatedImages,
+    }
+    setDraftContent(updatedDraftContent)
+
+    // 保存到数据库
+    try {
+      await updateWorkImages(work._id.toString(), updatedDraftContent)
+      setWork({ ...work, draftContent: updatedDraftContent })
+    } catch (err) {
+      console.error('保存配图失败:', err)
+    }
+  }
+
+  // 配图反馈回调
+  function handleImageFeedback(index: number, feedback: ImageFeedback) {
+    if (!draftContent?.images) return
+    const updatedImages = draftContent.images.map((img, i) =>
+      i === index ? { ...img, feedback } : img
+    )
+    setDraftContent({
+      ...draftContent,
+      images: updatedImages,
+    })
   }
 
   if (loading) {
@@ -254,55 +333,90 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
           </Card>
 
           {/* 封面规划 */}
-          {work.draftContent?.cover && (
+          {draftContent?.cover && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">封面规划</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* 显示封面图片 */}
-                {work.draftContent.cover.imageUrl && (
-                  <div className="relative aspect-[3/4] max-w-sm overflow-hidden rounded-lg border">
-                    <img
-                      src={work.draftContent.cover.imageUrl}
-                      alt="封面图片"
-                      className="object-cover w-full h-full"
+              <CardContent>
+                <div className="flex gap-4">
+                  {/* 左侧：图片生成 */}
+                  <div className="w-40 flex-shrink-0">
+                    <ImageGenerator
+                      prompt={draftContent.cover.mainVisual}
+                      imageType="cover"
+                      context={{
+                        positioning: draftContent.positioning,
+                        cover: draftContent.cover,
+                        title: draftContent.title,
+                        content: draftContent.content,
+                        allImages: draftContent.images,
+                      }}
+                      onImageGenerated={handleCoverImageGenerated}
+                      onFeedback={handleCoverFeedback}
+                      currentFeedback={draftContent.cover.feedback}
+                      initialImageUrl={draftContent.cover.imageUrl}
+                      initialPrompt={draftContent.cover.imagePrompt}
+                      faceSeed={faceSeed || undefined}
+                      onFaceSeedGenerated={setFaceSeed}
+                      compact
                     />
                   </div>
-                )}
-                <div className="space-y-2 text-sm">
-                  <p><strong>类型：</strong>{work.draftContent.cover.type}</p>
-                  <p><strong>主视觉：</strong>{work.draftContent.cover.mainVisual}</p>
-                  <p><strong>文案：</strong>{work.draftContent.cover.copywriting}</p>
-                  <p><strong>配色：</strong>{work.draftContent.cover.colorScheme}</p>
+                  {/* 右侧：规划信息 */}
+                  <div className="flex-1 space-y-2 text-sm">
+                    <p><strong>类型：</strong>{draftContent.cover.type}</p>
+                    <p><strong>主视觉：</strong>{draftContent.cover.mainVisual}</p>
+                    <p><strong>文案：</strong>{draftContent.cover.copywriting}</p>
+                    <p><strong>配色：</strong>{draftContent.cover.colorScheme}</p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
           {/* 配图规划 */}
-          {work.draftContent?.images && work.draftContent.images.length > 0 && (
+          {draftContent?.images && draftContent.images.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">配图 ({work.draftContent.images.length} 张)</CardTitle>
+                <CardTitle className="text-base">配图 ({draftContent.images.length} 张)</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {work.draftContent.images.map((img, i) => (
-                  <div key={i} className="p-3 bg-muted/50 rounded-md space-y-3">
-                    {/* 显示配图 */}
-                    {img.imageUrl && (
-                      <div className="relative aspect-[3/4] max-w-sm overflow-hidden rounded-lg border">
-                        <img
-                          src={img.imageUrl}
-                          alt={`配图 ${img.index || i + 1}`}
-                          className="object-cover w-full h-full"
-                        />
-                      </div>
-                    )}
-                    <div className="text-sm">
-                      <p className="font-medium">图 {img.index || i + 1}: {img.type}</p>
+                {draftContent.images.map((img, i) => (
+                  <div key={i} className="flex gap-4 p-3 bg-muted/50 rounded-lg">
+                    {/* 左侧：图片生成 */}
+                    <div className="w-40 flex-shrink-0">
+                      <ImageGenerator
+                        prompt={img.content}
+                        imageType="content"
+                        context={{
+                          positioning: draftContent.positioning,
+                          cover: draftContent.cover,
+                          title: draftContent.title,
+                          content: draftContent.content,
+                          allImages: draftContent.images,
+                          currentImage: {
+                            index: img.index || i + 1,
+                            type: img.type,
+                            content: img.content,
+                            overlay: img.overlay,
+                            tips: img.tips,
+                          },
+                        }}
+                        onImageGenerated={(url, prompt) => handleImageGenerated(i, url, prompt)}
+                        onFeedback={(feedback) => handleImageFeedback(i, feedback)}
+                        currentFeedback={img.feedback}
+                        initialImageUrl={img.imageUrl}
+                        initialPrompt={img.imagePrompt}
+                        faceSeed={faceSeed || undefined}
+                        onFaceSeedGenerated={setFaceSeed}
+                        compact
+                      />
+                    </div>
+                    {/* 右侧：规划信息 */}
+                    <div className="flex-1 text-sm">
+                      <p className="font-medium mb-2">图 {img.index || i + 1}: {img.type}</p>
                       <p className="text-muted-foreground">{img.content}</p>
-                      {img.overlay && <p className="text-muted-foreground">文字：{img.overlay}</p>}
+                      {img.overlay && <p className="text-muted-foreground mt-1">文字：{img.overlay}</p>}
                     </div>
                   </div>
                 ))}

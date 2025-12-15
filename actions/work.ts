@@ -493,3 +493,32 @@ export async function updateWorkContent(
     return { success: false, error: error instanceof Error ? error.message : '未知错误' }
   }
 }
+
+/**
+ * 更新作品图片（用于在作品详情页生成图片后保存）
+ */
+export async function updateWorkImages(
+  id: string,
+  draftContent: Work['draftContent']
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDb()
+
+    await db.collection(COLLECTIONS.WORKS).updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          draftContent,
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    revalidatePath('/works')
+    revalidatePath(`/works/${id}`)
+    return { success: true }
+  } catch (error) {
+    console.error('更新作品图片失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
