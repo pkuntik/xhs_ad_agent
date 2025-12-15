@@ -3,9 +3,9 @@
 import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Loader2, Sparkles, Download, ThumbsUp, ThumbsDown, RefreshCw } from 'lucide-react'
+import { Loader2, Sparkles, RefreshCw } from 'lucide-react'
 import { uploadBase64Image } from '@/lib/utils/image'
-import type { ImageFeedback, GenerationResult, ImagePlan, CreationFormData } from '@/types/creation'
+import type { GenerationResult, ImagePlan, CreationFormData } from '@/types/creation'
 
 interface ImageGenerationContext {
   formData?: CreationFormData
@@ -29,8 +29,6 @@ interface ImageGeneratorProps {
   imageType: 'cover' | 'content'
   context?: ImageGenerationContext
   onImageGenerated?: (imageUrl: string, imagePrompt: string) => void
-  onFeedback?: (feedback: ImageFeedback) => void
-  currentFeedback?: ImageFeedback
   aspectRatio?: '1:1' | '16:9' | '9:16' | '3:4' | '4:3'
   initialImageUrl?: string
   initialPrompt?: string
@@ -45,8 +43,6 @@ export function ImageGenerator({
   imageType,
   context,
   onImageGenerated,
-  onFeedback,
-  currentFeedback,
   aspectRatio = '3:4',
   initialImageUrl,
   initialPrompt,
@@ -61,7 +57,6 @@ export function ImageGenerator({
   const [error, setError] = useState<string | null>(null)
   const [generatedPrompt, setGeneratedPrompt] = useState<string | null>(initialPrompt || null)
   const [showPrompt, setShowPrompt] = useState(false)
-  const [feedback, setFeedback] = useState<ImageFeedback>(currentFeedback || null)
   const [faceSeed, setFaceSeed] = useState<string | null>(initialFaceSeed || null)
   const [createdBlobUrl, setCreatedBlobUrl] = useState<string | null>(null)
 
@@ -225,31 +220,6 @@ export function ImageGenerator({
     }
   }
 
-  const handleDownload = async () => {
-    if (!imageUrl) return
-
-    try {
-      const response = await fetch(imageUrl)
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `xiaohongshu-${imageType}-${Date.now()}.png`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-    } catch (err) {
-      console.error('Download error:', err)
-    }
-  }
-
-  const handleFeedback = (newFeedback: ImageFeedback) => {
-    const finalFeedback = feedback === newFeedback ? null : newFeedback
-    setFeedback(finalFeedback)
-    onFeedback?.(finalFeedback)
-  }
-
   const handleChangeFace = async () => {
     setIsChangingFace(true)
     setError(null)
@@ -382,7 +352,7 @@ export function ImageGenerator({
         <Button
           onClick={handleGenerate}
           disabled={isGenerating || isChangingFace || !prompt.trim()}
-          className={compact ? "flex-1" : "flex-1"}
+          className="flex-1"
           variant="outline"
           size="sm"
         >
@@ -399,34 +369,26 @@ export function ImageGenerator({
           )}
         </Button>
 
-        {imageUrl && (
-          <>
-            {!compact && (
-              <Button
-                onClick={handleChangeFace}
-                variant="outline"
-                size="sm"
-                disabled={isGenerating || isChangingFace}
-                title="重新生成一个不同的人脸"
-              >
-                {isChangingFace ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    切换中...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    换脸
-                  </>
-                )}
-              </Button>
+        {imageUrl && !compact && (
+          <Button
+            onClick={handleChangeFace}
+            variant="outline"
+            size="sm"
+            disabled={isGenerating || isChangingFace}
+            title="重新生成一个不同的人脸"
+          >
+            {isChangingFace ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                切换中...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                换脸
+              </>
             )}
-            <Button onClick={handleDownload} variant="outline" size="sm">
-              <Download className="h-4 w-4" />
-              {!compact && <span className="ml-2">下载</span>}
-            </Button>
-          </>
+          </Button>
         )}
       </div>
 
@@ -457,69 +419,14 @@ export function ImageGenerator({
 
       {imageUrl && !compact && (
         <Card>
-          <CardContent className="p-4 space-y-3">
+          <CardContent className="p-4">
             <img
               src={imageUrl}
               alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
               className="w-full h-auto rounded-lg"
             />
-
-            <div className="flex items-center justify-center gap-3 pt-2 border-t">
-              <span className="text-xs text-muted-foreground">图片质量:</span>
-              <Button
-                variant={feedback === 'like' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => handleFeedback('like')}
-                className="flex items-center gap-1"
-              >
-                <ThumbsUp className={`h-4 w-4 ${feedback === 'like' ? 'fill-current' : ''}`} />
-                <span className="text-xs">满意</span>
-              </Button>
-              <Button
-                variant={feedback === 'dislike' ? 'destructive' : 'outline'}
-                size="sm"
-                onClick={() => handleFeedback('dislike')}
-                className="flex items-center gap-1"
-              >
-                <ThumbsDown className={`h-4 w-4 ${feedback === 'dislike' ? 'fill-current' : ''}`} />
-                <span className="text-xs">不满意</span>
-              </Button>
-            </div>
-
-            {feedback === 'like' && (
-              <p className="text-xs text-green-600 text-center">
-                ✓ 已收集反馈，后续生成将参考此图片风格
-              </p>
-            )}
-            {feedback === 'dislike' && (
-              <p className="text-xs text-orange-600 text-center">
-                ✓ 已收集反馈，后续生成将避免此类风格
-              </p>
-            )}
           </CardContent>
         </Card>
-      )}
-
-      {/* compact 模式下的反馈按钮 */}
-      {imageUrl && compact && (
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant={feedback === 'like' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => handleFeedback('like')}
-            className="h-7 px-2"
-          >
-            <ThumbsUp className={`h-3 w-3 ${feedback === 'like' ? 'fill-current' : ''}`} />
-          </Button>
-          <Button
-            variant={feedback === 'dislike' ? 'destructive' : 'outline'}
-            size="sm"
-            onClick={() => handleFeedback('dislike')}
-            className="h-7 px-2"
-          >
-            <ThumbsDown className={`h-3 w-3 ${feedback === 'dislike' ? 'fill-current' : ''}`} />
-          </Button>
-        </div>
       )}
 
       {/* compact 模式下没有图片时显示占位 */}

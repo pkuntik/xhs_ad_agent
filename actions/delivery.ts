@@ -7,6 +7,8 @@ import type { XhsAccount } from '@/types/account'
 import type { Work } from '@/types/work'
 import type { Campaign } from '@/types/campaign'
 import type { DeliveryLog, DeliveryDecision } from '@/types/delivery-log'
+import { getCurrentUserId } from '@/lib/auth/session'
+import { deductBalance } from '@/lib/billing/service'
 
 /**
  * 创建投放（发作品 -> 投放2000元）
@@ -25,6 +27,22 @@ export async function startDelivery(
   }
 ): Promise<{ success: boolean; error?: string; campaignId?: string }> {
   try {
+    // 获取当前用户并扣费
+    const userId = await getCurrentUserId()
+    if (!userId) {
+      return { success: false, error: '请先登录' }
+    }
+
+    const deductResult = await deductBalance(userId, 'xhs_api_call', {
+      relatedType: 'delivery',
+      description: '小红书API调用-创建投放',
+      metadata: { workId },
+    })
+
+    if (!deductResult.success) {
+      return { success: false, error: deductResult.error }
+    }
+
     const db = await getDb()
 
     // 获取作品信息

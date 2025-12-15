@@ -13,7 +13,7 @@ import { Loader2, Copy, Check, ExternalLink, Edit2, Save, ArrowLeft } from 'luci
 import { getWorkById, updateWorkContent, bindPublishedNote, updateWorkImages } from '@/actions/work'
 import { ImageGenerator } from '@/components/image/ImageGenerator'
 import type { Work } from '@/types/work'
-import type { ImageFeedback, GenerationResult } from '@/types/creation'
+import type { GenerationResult } from '@/types/creation'
 
 const statusMap = {
   unused: { label: '未使用', variant: 'secondary' as const },
