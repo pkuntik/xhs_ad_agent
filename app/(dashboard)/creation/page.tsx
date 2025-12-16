@@ -19,12 +19,14 @@ import {
 import { Loader2, Sparkles, Copy, Check, Save, Edit2 } from 'lucide-react'
 import { saveWork } from '@/actions/work'
 import { ImageGenerator } from '@/components/image/ImageGenerator'
+import { CustomAudienceSelector } from '@/components/form/CustomAudienceSelector'
 import { processImageUrl } from '@/lib/utils/image'
 import type {
   CreationFormData,
   GenerationResult,
   PromotionGoal,
   ContentScene,
+  AudienceType,
 } from '@/types/creation'
 
 const PROMOTION_GOALS: PromotionGoal[] = [
@@ -44,6 +46,8 @@ const CONTENT_SCENES: ContentScene[] = [
   '服务推广',
 ]
 
+const AUDIENCE_TYPES: AudienceType[] = ['智能推荐', '自定义人群']
+
 export default function CreationPage() {
   const router = useRouter()
   const [formData, setFormData] = useState<CreationFormData>({
@@ -51,6 +55,10 @@ export default function CreationPage() {
     topic: '',
     contentScene: '引流咨询',
     audienceType: '智能推荐',
+    customAudience: {
+      gender: '不限',
+      ageRanges: [],
+    },
     generationOptions: {
       cover: true,
       title: true,
@@ -346,6 +354,30 @@ export default function CreationPage() {
                   rows={2}
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label>目标受众</Label>
+                <Select
+                  value={formData.audienceType}
+                  onValueChange={(v: string) => setFormData({ ...formData, audienceType: v as AudienceType })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AUDIENCE_TYPES.map((type) => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {formData.audienceType === '自定义人群' && (
+                <CustomAudienceSelector
+                  value={formData.customAudience || { gender: '不限', ageRanges: [] }}
+                  onChange={(audience) => setFormData({ ...formData, customAudience: audience })}
+                />
+              )}
 
               <div className="space-y-2">
                 <Label>生成内容</Label>
