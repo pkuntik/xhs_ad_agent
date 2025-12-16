@@ -440,7 +440,7 @@ export function ImageGenerator({
           <img
             src={imageUrl}
             alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
           />
           {/* 操作按钮 */}
           <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
