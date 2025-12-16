@@ -200,7 +200,20 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
       const result = await bindPublishedNote(work.publishCode, { noteUrl: noteUrl.trim() })
 
       if (result.success) {
-        setWork({ ...work, noteUrl: noteUrl.trim(), status: 'published' })
+        // 添加到 publications 列表
+        const newPublication = {
+          noteUrl: noteUrl.trim(),
+          publishedAt: new Date(),
+        }
+        const updatedPublications = [...(work.publications || []), newPublication]
+        setWork({
+          ...work,
+          noteUrl: noteUrl.trim(),
+          publications: updatedPublications,
+          status: 'published',
+        })
+        // 清空输入框以便添加更多
+        setNoteUrl('')
       } else {
         setError(result.error || '绑定失败')
       }
@@ -860,67 +873,69 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
             </CardContent>
           </Card>
 
-          {/* 绑定笔记链接 */}
-          {work.status !== 'published' && work.status !== 'promoting' && (
+          {/* 已绑定的笔记链接 */}
+          {work.publications && work.publications.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">绑定笔记链接</CardTitle>
-                <CardDescription>发布后填写笔记链接完成绑定</CardDescription>
+                <CardTitle className="text-base">已绑定笔记 ({work.publications.length})</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-2">
-                  <Label>笔记链接</Label>
-                  <Input
-                    value={noteUrl}
-                    onChange={(e) => setNoteUrl(e.target.value)}
-                    placeholder="https://www.xiaohongshu.com/explore/..."
-                  />
-                </div>
-                <Button
-                  className="w-full"
-                  onClick={handleBindNote}
-                  disabled={binding || !noteUrl.trim()}
-                >
-                  {binding ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      绑定中...
-                    </>
-                  ) : (
-                    '确认绑定'
-                  )}
-                </Button>
+              <CardContent className="space-y-2">
+                {work.publications.map((pub, index) => (
+                  <div key={index} className="text-sm break-all p-2 bg-muted/50 rounded">
+                    <a
+                      href={pub.noteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {pub.noteUrl}
+                    </a>
+                    {pub.publishedAt && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(pub.publishedAt).toLocaleString('zh-CN')}
+                      </p>
+                    )}
+                  </div>
+                ))}
               </CardContent>
             </Card>
           )}
 
-          {/* 已绑定信息 */}
-          {work.noteUrl && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">笔记信息</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {work.noteId && (
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">笔记 ID：</span>
-                    {work.noteId}
-                  </div>
+          {/* 绑定笔记链接 - 始终显示 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">添加笔记链接</CardTitle>
+              <CardDescription>
+                {work.publications && work.publications.length > 0
+                  ? '可以继续添加更多笔记链接'
+                  : '发布后填写笔记链接完成绑定'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <Label>笔记链接</Label>
+                <Input
+                  value={noteUrl}
+                  onChange={(e) => setNoteUrl(e.target.value)}
+                  placeholder="https://www.xiaohongshu.com/explore/..."
+                />
+              </div>
+              <Button
+                className="w-full"
+                onClick={handleBindNote}
+                disabled={binding || !noteUrl.trim()}
+              >
+                {binding ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    绑定中...
+                  </>
+                ) : (
+                  '添加绑定'
                 )}
-                <div className="text-sm break-all">
-                  <span className="text-muted-foreground">笔记链接：</span>
-                  <a
-                    href={work.noteUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    {work.noteUrl}
-                  </a>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+              </Button>
+            </CardContent>
+          </Card>
 
           {/* 投放数据 */}
           {(work.status === 'published' || work.status === 'promoting') && (
