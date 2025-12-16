@@ -24,6 +24,8 @@ interface ChuangkitEditorProps {
   open: boolean
   /** 要编辑的图片 URL */
   imageUrl?: string
+  /** 创客贴设计稿 ID（用于继续编辑保留图层） */
+  designId?: string
   /** 用户标识 */
   userFlag?: string
   /** 编辑完成回调，返回编辑后的图片 URL 列表 */
@@ -37,6 +39,7 @@ interface ChuangkitEditorProps {
 export function ChuangkitEditor({
   open,
   imageUrl,
+  designId,
   userFlag = 'anonymous',
   onComplete,
   onClose,
@@ -107,12 +110,14 @@ export function ChuangkitEditor({
       }
 
       // 获取签名和参数
+      // 如果有 designId，使用编辑模式；否则使用创建模式
       const signResult = await signChuangkitRequest({
         userFlag,
-        mode: 'create',
-        uploadImgUrl: imageUrl,
-        uploadImgWidth,
-        uploadImgHeight,
+        mode: designId ? 'edit' : 'create',
+        designId,
+        uploadImgUrl: designId ? undefined : imageUrl,  // 编辑模式不需要上传图片
+        uploadImgWidth: designId ? undefined : uploadImgWidth,
+        uploadImgHeight: designId ? undefined : uploadImgHeight,
       })
 
       if (!signResult.success || !signResult.params) {
@@ -165,7 +170,7 @@ export function ChuangkitEditor({
       setIsLoading(false)
       onError?.(errorMessage)
     }
-  }, [open, imageUrl, userFlag, onComplete, onClose, onError, getImageDimensions])
+  }, [open, imageUrl, designId, userFlag, onComplete, onClose, onError, getImageDimensions])
 
   // 监听 open 状态变化
   useEffect(() => {

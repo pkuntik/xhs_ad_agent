@@ -130,7 +130,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   // 封面图片生成回调
-  async function handleCoverImageGenerated(imageUrl: string, imagePrompt: string) {
+  async function handleCoverImageGenerated(imageUrl: string, imagePrompt: string, chuangkitDesignId?: string) {
     if (!work || !draftContent?.cover) return
 
     const updatedDraftContent = {
@@ -139,6 +139,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
         ...draftContent.cover,
         imageUrl,
         imagePrompt,
+        chuangkitDesignId,
       },
     }
     setDraftContent(updatedDraftContent)
@@ -153,11 +154,11 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   // 配图生成回调
-  async function handleImageGenerated(index: number, imageUrl: string, imagePrompt: string) {
+  async function handleImageGenerated(index: number, imageUrl: string, imagePrompt: string, chuangkitDesignId?: string) {
     if (!work || !draftContent?.images) return
 
     const updatedImages = draftContent.images.map((img, i) =>
-      i === index ? { ...img, imageUrl, imagePrompt } : img
+      i === index ? { ...img, imageUrl, imagePrompt, chuangkitDesignId } : img
     )
     const updatedDraftContent = {
       ...draftContent,
@@ -331,6 +332,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
                       onImageGenerated={handleCoverImageGenerated}
                       initialImageUrl={draftContent.cover.imageUrl}
                       initialPrompt={draftContent.cover.imagePrompt}
+                      initialDesignId={draftContent.cover.chuangkitDesignId}
                       faceSeed={faceSeed || undefined}
                       onFaceSeedGenerated={setFaceSeed}
                       compact
@@ -376,9 +378,10 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
                             tips: img.tips,
                           },
                         }}
-                        onImageGenerated={(url, prompt) => handleImageGenerated(i, url, prompt)}
+                        onImageGenerated={(url, prompt, designId) => handleImageGenerated(i, url, prompt, designId)}
                         initialImageUrl={img.imageUrl}
                         initialPrompt={img.imagePrompt}
+                        initialDesignId={img.chuangkitDesignId}
                         faceSeed={faceSeed || undefined}
                         onFaceSeedGenerated={setFaceSeed}
                         compact

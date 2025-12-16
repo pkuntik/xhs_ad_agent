@@ -60,6 +60,7 @@ export interface ImagePlan {
   imageUrl?: string;
   imagePrompt?: string;
   feedback?: ImageFeedback;
+  chuangkitDesignId?: string;  // 创客贴设计稿 ID，用于保留图层信息
 }
 
 export interface GenerationResult {
@@ -79,6 +80,7 @@ export interface GenerationResult {
     imageUrl?: string;
     imagePrompt?: string;
     feedback?: ImageFeedback;
+    chuangkitDesignId?: string;  // 创客贴设计稿 ID，用于保留图层信息
   };
   title?: {
     text: string;

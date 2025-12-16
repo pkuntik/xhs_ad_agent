@@ -48,10 +48,11 @@ interface ImageGeneratorProps {
   prompt: string
   imageType: 'cover' | 'content'
   context?: ImageGenerationContext
-  onImageGenerated?: (imageUrl: string, imagePrompt: string) => void
+  onImageGenerated?: (imageUrl: string, imagePrompt: string, chuangkitDesignId?: string) => void
   aspectRatio?: '1:1' | '16:9' | '9:16' | '3:4' | '4:3'
   initialImageUrl?: string
   initialPrompt?: string
+  initialDesignId?: string  // 创客贴设计稿 ID
   faceSeed?: string
   onFaceSeedGenerated?: (faceSeed: string) => void
   feedbackExamples?: FeedbackWithReason[]
@@ -66,6 +67,7 @@ export function ImageGenerator({
   aspectRatio = '3:4',
   initialImageUrl,
   initialPrompt,
+  initialDesignId,
   faceSeed: initialFaceSeed,
   onFaceSeedGenerated,
   feedbackExamples: propFeedbackExamples,
@@ -79,6 +81,7 @@ export function ImageGenerator({
   const [showPrompt, setShowPrompt] = useState(false)
   const [faceSeed, setFaceSeed] = useState<string | null>(initialFaceSeed || null)
   const [createdBlobUrl, setCreatedBlobUrl] = useState<string | null>(null)
+  const [chuangkitDesignId, setChuangkitDesignId] = useState<string | null>(initialDesignId || null)
 
   // 重新生成原因选择相关状态
   const [showRegenDialog, setShowRegenDialog] = useState(false)
@@ -258,6 +261,8 @@ export function ImageGenerator({
       }
 
       setImageUrl(displayImageUrl)
+      // 新生成的图片清除旧的设计稿 ID（因为是全新的图片）
+      setChuangkitDesignId(null)
       onImageGenerated?.(finalImageUrl, aiGeneratedPrompt)
     } catch (err: unknown) {
       console.error('Image generation error:', err)
@@ -352,6 +357,8 @@ export function ImageGenerator({
       }
 
       setImageUrl(displayImageUrl)
+      // 新生成的图片清除旧的设计稿 ID（因为是全新的图片）
+      setChuangkitDesignId(null)
       onImageGenerated?.(finalImageUrl, aiGeneratedPrompt)
     } catch (err: unknown) {
       console.error('Change face error:', err)
@@ -680,13 +687,18 @@ export function ImageGenerator({
       <ChuangkitEditor
         open={showChuangkitEditor}
         imageUrl={imageUrl || undefined}
-        onComplete={async (imageUrls) => {
+        designId={chuangkitDesignId || undefined}
+        onComplete={async (imageUrls, newDesignId) => {
           if (imageUrls.length > 0) {
             const newImageUrl = imageUrls[0]
             setImageUrl(newImageUrl)
-            // 通知父组件图片已更新
+            // 保存设计稿 ID
+            if (newDesignId) {
+              setChuangkitDesignId(newDesignId)
+            }
+            // 通知父组件图片已更新（包含设计稿 ID）
             if (generatedPrompt) {
-              onImageGenerated?.(newImageUrl, generatedPrompt)
+              onImageGenerated?.(newImageUrl, generatedPrompt, newDesignId)
             }
           }
           setShowChuangkitEditor(false)

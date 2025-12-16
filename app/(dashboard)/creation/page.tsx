@@ -246,7 +246,7 @@ export default function CreationPage() {
   }
 
   // 封面图片生成回调
-  function handleCoverImageGenerated(imageUrl: string, imagePrompt: string) {
+  function handleCoverImageGenerated(imageUrl: string, imagePrompt: string, chuangkitDesignId?: string) {
     if (result?.cover) {
       setResult({
         ...result,
@@ -254,16 +254,17 @@ export default function CreationPage() {
           ...result.cover,
           imageUrl,
           imagePrompt,
+          chuangkitDesignId,
         },
       })
     }
   }
 
   // 配图生成回调
-  function handleImageGenerated(index: number, imageUrl: string, imagePrompt: string) {
+  function handleImageGenerated(index: number, imageUrl: string, imagePrompt: string, chuangkitDesignId?: string) {
     if (result?.images) {
       const updatedImages = result.images.map((img, i) =>
-        i === index ? { ...img, imageUrl, imagePrompt } : img
+        i === index ? { ...img, imageUrl, imagePrompt, chuangkitDesignId } : img
       )
       setResult({
         ...result,
@@ -623,6 +624,7 @@ export default function CreationPage() {
                           onImageGenerated={handleCoverImageGenerated}
                           initialImageUrl={result.cover.imageUrl}
                           initialPrompt={result.cover.imagePrompt}
+                          initialDesignId={result.cover.chuangkitDesignId}
                           faceSeed={faceSeed || undefined}
                           onFaceSeedGenerated={setFaceSeed}
                           compact
@@ -669,9 +671,10 @@ export default function CreationPage() {
                                 tips: img.tips,
                               },
                             }}
-                            onImageGenerated={(url, prompt) => handleImageGenerated(i, url, prompt)}
+                            onImageGenerated={(url, prompt, designId) => handleImageGenerated(i, url, prompt, designId)}
                             initialImageUrl={img.imageUrl}
                             initialPrompt={img.imagePrompt}
+                            initialDesignId={img.chuangkitDesignId}
                             faceSeed={faceSeed || undefined}
                             onFaceSeedGenerated={setFaceSeed}
                             compact
