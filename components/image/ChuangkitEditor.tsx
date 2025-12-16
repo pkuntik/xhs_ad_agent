@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useCallback } from 'react'
-import { X, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { signChuangkitRequest } from '@/actions/chuangkit'
 
 // 声明全局类型
@@ -43,7 +43,6 @@ export function ChuangkitEditor({
   onError,
 }: ChuangkitEditorProps) {
   const editorInstanceRef = useRef<unknown>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -174,24 +173,13 @@ export function ChuangkitEditor({
 
   if (!open) return null
 
+  // 创客贴 SDK 会自己创建弹窗和遮罩，我们只需要在加载/错误时显示提示
   return (
-    <div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center">
-      {/* 关闭按钮 */}
-      <button
-        onClick={() => {
-          cleanupEditor()
-          onClose?.()
-        }}
-        className="absolute top-4 right-4 z-[210] p-2 bg-white/90 text-gray-700 rounded-full hover:bg-white transition-colors shadow-lg"
-        title="关闭编辑器"
-      >
-        <X className="h-6 w-6" />
-      </button>
-
+    <>
       {/* 加载状态 */}
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-[205]">
-          <div className="flex flex-col items-center gap-3">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50">
+          <div className="flex flex-col items-center gap-3 bg-white p-6 rounded-lg shadow-lg">
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
             <p className="text-gray-600">正在加载编辑器...</p>
           </div>
@@ -200,28 +188,32 @@ export function ChuangkitEditor({
 
       {/* 错误提示 */}
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-[205]">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50">
           <div className="text-center p-6 bg-white rounded-lg shadow-lg max-w-md">
             <p className="text-red-500 mb-4">{error}</p>
-            <button
-              onClick={() => {
-                setError(null)
-                initEditor()
-              }}
-              className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90"
-            >
-              重试
-            </button>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={() => {
+                  setError(null)
+                  onClose?.()
+                }}
+                className="px-4 py-2 border rounded hover:bg-gray-50"
+              >
+                关闭
+              </button>
+              <button
+                onClick={() => {
+                  setError(null)
+                  initEditor()
+                }}
+                className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90"
+              >
+                重试
+              </button>
+            </div>
           </div>
         </div>
       )}
-
-      {/* 编辑器容器 - 创客贴会自动创建 iframe */}
-      <div
-        ref={containerRef}
-        id="ckt-design-page"
-        className="w-full h-full"
-      />
-    </div>
+    </>
   )
 }

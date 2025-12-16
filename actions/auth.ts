@@ -5,7 +5,7 @@ import { ObjectId } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
 import { signToken } from '@/lib/auth/jwt'
-import { AUTH_COOKIE_NAME } from '@/lib/auth/session'
+import { AUTH_COOKIE_NAME, getCurrentUserId } from '@/lib/auth/session'
 import type { User, LoginInput, CreateUserInput, UserInfo } from '@/types/user'
 
 /**
@@ -186,7 +186,10 @@ export async function getUserById(userId: string): Promise<User | null> {
 /**
  * 获取当前用户信息 (包含余额等)
  */
-export async function getCurrentUserInfo(userId: string): Promise<UserInfo | null> {
+export async function getCurrentUserInfo(): Promise<UserInfo | null> {
+  const userId = await getCurrentUserId()
+  if (!userId) return null
+
   const user = await getUserById(userId)
   if (!user) return null
 
