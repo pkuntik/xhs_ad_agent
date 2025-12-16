@@ -4,6 +4,7 @@ import { getUsers } from '@/actions/admin'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatBalance } from '@/types/pricing'
+import type { User } from '@/types/user'
 import { Plus } from 'lucide-react'
 
 async function UserList() {
@@ -11,7 +12,7 @@ async function UserList() {
 
   return (
     <div className="space-y-4">
-      {users.map((user) => (
+      {users.map((user: User) => (
         <Card key={user._id.toString()}>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">

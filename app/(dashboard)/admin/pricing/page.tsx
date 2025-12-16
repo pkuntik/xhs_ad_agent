@@ -23,7 +23,7 @@ export default function PricingPage() {
       setItems(data)
       // 初始化编辑价格 (转换为元)
       const prices: Record<string, number> = {}
-      data.forEach(item => {
+      data.forEach((item: PricingItem) => {
         prices[item._id.toString()] = item.price / 100
       })
       setEditPrices(prices)

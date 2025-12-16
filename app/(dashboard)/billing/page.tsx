@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getMyBalance, getMyTransactions } from '@/actions/billing'
 import { formatBalance } from '@/types/pricing'
+import type { Transaction } from '@/types/transaction'
 import { Wallet, TrendingUp, TrendingDown } from 'lucide-react'
 
 async function BalanceCards() {
@@ -56,7 +57,7 @@ async function TransactionList() {
       </CardHeader>
       <CardContent>
         <div className="space-y-2">
-          {transactions.map((trans) => (
+          {transactions.map((trans: Transaction) => (
             <div key={trans._id.toString()} className="flex items-center justify-between p-3 border rounded text-sm">
               <div className="flex items-center gap-4">
                 <span className={`font-medium ${trans.type === 'recharge' ? 'text-green-600' : 'text-red-600'}`}>

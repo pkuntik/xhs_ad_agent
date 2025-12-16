@@ -424,6 +424,17 @@ export async function bindPublishedNote(
     const { noteId, noteUrl, accountId } = input
     const db = await getDb()
 
+    // 先查询作品，检查是否已存在相同笔记
+    const work = await db.collection(COLLECTIONS.WORKS).findOne({ publishCode: code })
+    if (!work) {
+      return { success: false, error: '作品不存在' }
+    }
+
+    // 检查是否重复
+    if (noteId && work.publications?.some((pub: { noteId?: string }) => pub.noteId === noteId)) {
+      return { success: false, error: '该笔记已绑定，请勿重复添加' }
+    }
+
     // 创建新的发布记录
     const publication = {
       noteId,
@@ -448,7 +459,7 @@ export async function bindPublishedNote(
       updateData.accountId = new ObjectId(accountId)
     }
 
-    const result = await db.collection(COLLECTIONS.WORKS).updateOne(
+    await db.collection(COLLECTIONS.WORKS).updateOne(
       { publishCode: code },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       {
@@ -456,10 +467,6 @@ export async function bindPublishedNote(
         $push: { publications: publication }
       } as any
     )
-
-    if (result.matchedCount === 0) {
-      return { success: false, error: '作品不存在' }
-    }
 
     revalidatePath('/works')
     return { success: true }

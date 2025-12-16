@@ -191,17 +191,46 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     }
   }
 
+  // 从小红书链接提取笔记 ID
+  function extractNoteId(url: string): string | null {
+    // 支持格式: https://www.xiaohongshu.com/explore/693e999e000000000d03948c?...
+    const match = url.match(/\/explore\/([a-f0-9]+)/i)
+    return match ? match[1] : null
+  }
+
   async function handleBindNote() {
     if (!work || !noteUrl.trim()) return
+
+    // 提取笔记 ID
+    const newNoteId = extractNoteId(noteUrl.trim())
+    if (!newNoteId) {
+      setError('无效的笔记链接格式')
+      return
+    }
+
+    // 检查是否已存在相同笔记
+    const existingNoteIds = (work.publications || [])
+      .map(pub => extractNoteId(pub.noteUrl))
+      .filter(Boolean)
+
+    if (existingNoteIds.includes(newNoteId)) {
+      setError('该笔记已绑定，请勿重复添加')
+      return
+    }
+
     setBinding(true)
     setError('')
 
     try {
-      const result = await bindPublishedNote(work.publishCode, { noteUrl: noteUrl.trim() })
+      const result = await bindPublishedNote(work.publishCode, {
+        noteUrl: noteUrl.trim(),
+        noteId: newNoteId,
+      })
 
       if (result.success) {
         // 添加到 publications 列表
         const newPublication = {
+          noteId: newNoteId,
           noteUrl: noteUrl.trim(),
           publishedAt: new Date(),
         }
