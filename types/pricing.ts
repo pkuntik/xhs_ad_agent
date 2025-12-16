@@ -61,6 +61,11 @@ export const DEFAULT_PRICING: Record<BillingAction, { name: string; description:
     description: '一次性生成所有内容(标题、正文、封面、配图等)',
     price: 300, // 3元
   },
+  ai_regenerate_plan: {
+    name: '重新生成规划',
+    description: 'AI重新生成封面或配图规划',
+    price: 50,  // 0.5元
+  },
   image_generate: {
     name: '生成图片',
     description: '生成封面或配图图片',

@@ -11,6 +11,7 @@ export type BillingAction =
   | 'ai_generate_topics'          // 生成话题
   | 'ai_generate_private_message' // 生成私信模板
   | 'ai_generate_full'            // 一次性完整生成
+  | 'ai_regenerate_plan'          // 重新生成规划
   | 'image_generate'              // 生成图片
   | 'publish_scan'                // 扫码发布
   | 'account_add'                 // 添加账号(超额)

@@ -257,3 +257,146 @@ ${context?.topic || '通用内容'}
     return { success: false, error: error.message || '图片生成失败' }
   }
 }
+
+/**
+ * 重新生成规划（封面或配图）
+ */
+export async function regeneratePlan(params: {
+  planType: 'cover' | 'image'
+  imageIndex?: number  // 配图索引（当 planType 为 image 时）
+  reason?: string      // 重新生成的原因
+  context: {
+    positioning?: GenerationResult['positioning']
+    title?: GenerationResult['title']
+    content?: GenerationResult['content']
+    cover?: GenerationResult['cover']
+    images?: GenerationResult['images']
+  }
+}): Promise<{
+  success: boolean
+  plan?: {
+    type: string
+    mainVisual?: string
+    copywriting?: string
+    colorScheme?: string
+    content?: string
+    overlay?: string
+  }
+  error?: string
+}> {
+  try {
+    const { planType, imageIndex, reason, context } = params
+
+    // 获取当前用户并扣费
+    const userId = await getCurrentUserId()
+    if (!userId) {
+      return { success: false, error: '请先登录' }
+    }
+
+    const deductResult = await deductBalance(userId, 'ai_regenerate_plan', {
+      relatedType: 'creation',
+      description: `重新生成${planType === 'cover' ? '封面' : '配图'}规划`,
+      metadata: { planType, imageIndex, reason },
+    })
+
+    if (!deductResult.success) {
+      return { success: false, error: deductResult.error }
+    }
+
+    // 创建 Anthropic 客户端
+    const client = createAnthropicClient()
+    const anthropicUserId = generateUserId()
+
+    // 构建提示词
+    let userMessage = ''
+    const reasonText = reason ? `\n\n【重新生成原因】\n用户反馈：${reason}\n请特别注意避免这个问题，生成一个更好的规划。\n` : ''
+
+    if (planType === 'cover') {
+      userMessage = `你是一个小红书封面设计专家。请根据以下内容重新生成一个封面规划。
+${reasonText}
+【内容定位】
+- 内容类型：${context.positioning?.contentType || '分享类'}
+- 目标受众：${context.positioning?.targetAudience || '大众'}
+- 调性：${context.positioning?.tone || '轻松友好'}
+- 关键词：${context.positioning?.keywords?.join('、') || ''}
+
+【标题】
+${context.title?.text || ''}
+
+【正文摘要】
+${context.content?.body?.slice(0, 200) || ''}
+
+请以 JSON 格式返回封面规划，包含以下字段：
+{
+  "type": "封面类型（如：产品展示、人物出镜、场景图、对比图等）",
+  "mainVisual": "主视觉描述（详细描述封面的主要视觉元素）",
+  "copywriting": "封面文案（吸引人的标题文字）",
+  "colorScheme": "配色方案（如：粉白系、蓝绿系、暖色调等）"
+}
+
+只返回 JSON，不要其他内容。`
+    } else {
+      const currentImage = context.images?.[imageIndex || 0]
+      const totalImages = context.images?.length || 1
+
+      userMessage = `你是一个小红书配图设计专家。请根据以下内容重新生成第 ${(imageIndex || 0) + 1}/${totalImages} 张配图的规划。
+${reasonText}
+【内容定位】
+- 内容类型：${context.positioning?.contentType || '分享类'}
+- 目标受众：${context.positioning?.targetAudience || '大众'}
+- 调性：${context.positioning?.tone || '轻松友好'}
+
+【标题】
+${context.title?.text || ''}
+
+【正文摘要】
+${context.content?.body?.slice(0, 300) || ''}
+
+【当前配图信息】
+- 类型：${currentImage?.type || ''}
+- 内容：${currentImage?.content || ''}
+- 文字叠加：${currentImage?.overlay || '无'}
+
+请以 JSON 格式返回新的配图规划，包含以下字段：
+{
+  "type": "配图类型（如：产品展示、步骤图、效果对比、场景图等）",
+  "content": "配图内容描述（详细描述这张图应该展示什么）",
+  "overlay": "文字叠加（图片上需要显示的文字，可以为空字符串）"
+}
+
+只返回 JSON，不要其他内容。`
+    }
+
+    // 调用 AI
+    const stream = client.messages.stream({
+      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      messages: [
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: '{' }
+      ],
+      metadata: { user_id: anthropicUserId }
+    })
+
+    const response = await stream.finalMessage()
+
+    // 提取文本内容
+    let rawText = '{'
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        rawText += block.text
+      }
+    }
+
+    // 解析 JSON
+    try {
+      const plan = JSON.parse(rawText)
+      return { success: true, plan }
+    } catch {
+      return { success: false, error: '解析规划结果失败' }
+    }
+  } catch (error: unknown) {
+    console.error('重新生成规划失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '重新生成规划失败' }
+  }
+}

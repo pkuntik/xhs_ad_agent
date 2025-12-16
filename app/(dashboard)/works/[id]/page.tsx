@@ -9,11 +9,29 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Copy, Check, ExternalLink, Edit2, Save, ArrowLeft } from 'lucide-react'
+import { Loader2, Copy, Check, ExternalLink, Edit2, Save, ArrowLeft, RefreshCw, X } from 'lucide-react'
 import { getWorkById, updateWorkContent, bindPublishedNote, updateWorkImages } from '@/actions/work'
+import { regeneratePlan } from '@/actions/creation'
 import { ImageGenerator } from '@/components/image/ImageGenerator'
 import type { Work } from '@/types/work'
 import type { GenerationResult } from '@/types/creation'
+
+// 重新生成封面规划的原因选项
+const COVER_REGENERATE_REASONS = [
+  { value: 'type', label: '类型不合适' },
+  { value: 'mainVisual', label: '主视觉描述不好' },
+  { value: 'copywriting', label: '文案不够吸引人' },
+  { value: 'colorScheme', label: '配色不协调' },
+  { value: 'other', label: '其他' },
+]
+
+// 重新生成配图规划的原因选项
+const IMAGE_REGENERATE_REASONS = [
+  { value: 'type', label: '类型不合适' },
+  { value: 'content', label: '内容描述不够具体' },
+  { value: 'overlay', label: '文字叠加不好' },
+  { value: 'other', label: '其他' },
+]
 
 const statusMap = {
   unused: { label: '未使用', variant: 'secondary' as const },
@@ -37,6 +55,21 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
   const [editedTitle, setEditedTitle] = useState('')
   const [editedContent, setEditedContent] = useState('')
   const [editedTopics, setEditedTopics] = useState('')
+  // 封面规划编辑状态
+  const [editedCoverType, setEditedCoverType] = useState('')
+  const [editedCoverMainVisual, setEditedCoverMainVisual] = useState('')
+  const [editedCoverCopywriting, setEditedCoverCopywriting] = useState('')
+  const [editedCoverColorScheme, setEditedCoverColorScheme] = useState('')
+  // 配图规划编辑状态
+  const [editedImages, setEditedImages] = useState<Array<{ type: string; content: string; overlay: string }>>([])
+  // 重新生成状态
+  const [regeneratingCover, setRegeneratingCover] = useState(false)
+  const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | null>(null)
+  // 重新生成原因选择状态
+  const [showCoverRegenDialog, setShowCoverRegenDialog] = useState(false)
+  const [showImageRegenDialog, setShowImageRegenDialog] = useState<number | null>(null)
+  const [selectedReason, setSelectedReason] = useState('')
+  const [customReason, setCustomReason] = useState('')
 
   // 绑定笔记相关状态
   const [noteUrl, setNoteUrl] = useState('')
@@ -60,6 +93,23 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
           // 初始化 draftContent 用于图片生成
           if (data.draftContent) {
             setDraftContent(data.draftContent as GenerationResult)
+            // 初始化封面编辑状态
+            const cover = (data.draftContent as GenerationResult).cover
+            if (cover) {
+              setEditedCoverType(cover.type || '')
+              setEditedCoverMainVisual(cover.mainVisual || '')
+              setEditedCoverCopywriting(cover.copywriting || '')
+              setEditedCoverColorScheme(cover.colorScheme || '')
+            }
+            // 初始化配图编辑状态
+            const images = (data.draftContent as GenerationResult).images
+            if (images && images.length > 0) {
+              setEditedImages(images.map(img => ({
+                type: img.type || '',
+                content: img.content || '',
+                overlay: img.overlay || '',
+              })))
+            }
           }
         } else {
           setError('作品不存在')
@@ -85,10 +135,38 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     setError('')
 
     try {
+      // 更新 draftContent 中的封面规划和配图规划
+      let updatedDraftContent = draftContent
+      if (draftContent?.cover) {
+        updatedDraftContent = {
+          ...draftContent,
+          cover: {
+            ...draftContent.cover,
+            type: editedCoverType,
+            mainVisual: editedCoverMainVisual,
+            copywriting: editedCoverCopywriting,
+            colorScheme: editedCoverColorScheme,
+          },
+        }
+      }
+      // 更新配图规划
+      if (updatedDraftContent?.images && editedImages.length > 0) {
+        updatedDraftContent = {
+          ...updatedDraftContent,
+          images: updatedDraftContent.images.map((img, i) => ({
+            ...img,
+            type: editedImages[i]?.type ?? img.type,
+            content: editedImages[i]?.content ?? img.content,
+            overlay: editedImages[i]?.overlay ?? img.overlay,
+          })),
+        }
+      }
+
       const result = await updateWorkContent(work._id.toString(), {
         title: editedTitle,
         content: editedContent,
         tags: editedTopics.split(/\s+/).filter(Boolean),
+        draftContent: updatedDraftContent || undefined,
       })
 
       if (result.success) {
@@ -97,7 +175,11 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
           title: editedTitle,
           content: editedContent,
           tags: editedTopics.split(/\s+/).filter(Boolean),
+          draftContent: updatedDraftContent || work.draftContent,
         })
+        if (updatedDraftContent) {
+          setDraftContent(updatedDraftContent)
+        }
         setIsEditing(false)
       } else {
         setError(result.error || '保存失败')
@@ -172,6 +254,114 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
       setWork({ ...work, draftContent: updatedDraftContent })
     } catch (err) {
       console.error('保存配图失败:', err)
+    }
+  }
+
+  // 打开封面重新生成对话框
+  function openCoverRegenDialog() {
+    setSelectedReason('')
+    setCustomReason('')
+    setShowCoverRegenDialog(true)
+  }
+
+  // 打开配图重新生成对话框
+  function openImageRegenDialog(index: number) {
+    setSelectedReason('')
+    setCustomReason('')
+    setShowImageRegenDialog(index)
+  }
+
+  // 关闭重新生成对话框
+  function closeRegenDialog() {
+    setShowCoverRegenDialog(false)
+    setShowImageRegenDialog(null)
+    setSelectedReason('')
+    setCustomReason('')
+  }
+
+  // 重新生成封面规划
+  async function handleRegenerateCoverPlan() {
+    if (!draftContent || !selectedReason) return
+    const reason = selectedReason === 'other' ? customReason : COVER_REGENERATE_REASONS.find(r => r.value === selectedReason)?.label || ''
+
+    setShowCoverRegenDialog(false)
+    setRegeneratingCover(true)
+    setError('')
+
+    try {
+      const result = await regeneratePlan({
+        planType: 'cover',
+        reason,
+        context: {
+          positioning: draftContent.positioning,
+          title: draftContent.title,
+          content: draftContent.content,
+          cover: draftContent.cover,
+          images: draftContent.images,
+        },
+      })
+
+      if (result.success && result.plan) {
+        // 更新编辑状态
+        setEditedCoverType(result.plan.type || '')
+        setEditedCoverMainVisual(result.plan.mainVisual || '')
+        setEditedCoverCopywriting(result.plan.copywriting || '')
+        setEditedCoverColorScheme(result.plan.colorScheme || '')
+      } else {
+        setError(result.error || '重新生成封面规划失败')
+      }
+    } catch (err) {
+      console.error('重新生成封面规划失败:', err)
+      setError('重新生成封面规划失败')
+    } finally {
+      setRegeneratingCover(false)
+      setSelectedReason('')
+      setCustomReason('')
+    }
+  }
+
+  // 重新生成配图规划
+  async function handleRegenerateImagePlan(index: number) {
+    if (!draftContent?.images || !selectedReason) return
+    const reason = selectedReason === 'other' ? customReason : IMAGE_REGENERATE_REASONS.find(r => r.value === selectedReason)?.label || ''
+
+    setShowImageRegenDialog(null)
+    setRegeneratingImageIndex(index)
+    setError('')
+
+    try {
+      const result = await regeneratePlan({
+        planType: 'image',
+        imageIndex: index,
+        reason,
+        context: {
+          positioning: draftContent.positioning,
+          title: draftContent.title,
+          content: draftContent.content,
+          cover: draftContent.cover,
+          images: draftContent.images,
+        },
+      })
+
+      if (result.success && result.plan) {
+        // 更新编辑状态
+        const newImages = [...editedImages]
+        newImages[index] = {
+          type: result.plan.type || editedImages[index]?.type || '',
+          content: result.plan.content || editedImages[index]?.content || '',
+          overlay: result.plan.overlay || '',
+        }
+        setEditedImages(newImages)
+      } else {
+        setError(result.error || '重新生成配图规划失败')
+      }
+    } catch (err) {
+      console.error('重新生成配图规划失败:', err)
+      setError('重新生成配图规划失败')
+    } finally {
+      setRegeneratingImageIndex(null)
+      setSelectedReason('')
+      setCustomReason('')
     }
   }
 
@@ -272,10 +462,11 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
                   value={editedContent}
                   onChange={(e) => setEditedContent(e.target.value)}
                   placeholder="输入正文内容"
-                  rows={10}
+                  className="min-h-[200px] resize-y"
+                  style={{ height: Math.max(200, (editedContent.split('\n').length + 1) * 24) + 'px' }}
                 />
               ) : (
-                <div className="whitespace-pre-wrap text-sm">
+                <div className="whitespace-pre-wrap text-sm min-h-[100px]">
                   {editedContent || work.content || work.draftContent?.content?.body || '暂无内容'}
                 </div>
               )}
@@ -312,15 +503,85 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
           {/* 封面规划 */}
           {draftContent?.cover && (
             <Card>
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
                 <CardTitle className="text-base">封面规划</CardTitle>
+                <div className="relative">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={openCoverRegenDialog}
+                    disabled={regeneratingCover}
+                    title="重新生成封面规划"
+                  >
+                    {regeneratingCover ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                  </Button>
+                  {/* 封面重新生成原因选择弹窗 */}
+                  {showCoverRegenDialog && (
+                    <div className="absolute top-full right-0 mt-2 z-50 bg-white border rounded-lg shadow-lg p-4 w-64">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-medium">选择重新生成的原因：</p>
+                        <button
+                          onClick={closeRegenDialog}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {COVER_REGENERATE_REASONS.map(reason => (
+                          <label key={reason.value} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input
+                              type="radio"
+                              name="coverReason"
+                              value={reason.value}
+                              checked={selectedReason === reason.value}
+                              onChange={(e) => setSelectedReason(e.target.value)}
+                              className="accent-primary"
+                            />
+                            {reason.label}
+                          </label>
+                        ))}
+                      </div>
+                      {selectedReason === 'other' && (
+                        <Input
+                          className="mt-2"
+                          placeholder="请输入具体原因"
+                          value={customReason}
+                          onChange={(e) => setCustomReason(e.target.value)}
+                        />
+                      )}
+                      <div className="flex gap-2 mt-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          onClick={closeRegenDialog}
+                        >
+                          取消
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="flex-1"
+                          disabled={!selectedReason || (selectedReason === 'other' && !customReason)}
+                          onClick={handleRegenerateCoverPlan}
+                        >
+                          确定
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="flex gap-4">
                   {/* 左侧：图片生成 */}
                   <div className="w-40 flex-shrink-0">
                     <ImageGenerator
-                      prompt={draftContent.cover.mainVisual}
+                      prompt={editedCoverMainVisual || draftContent.cover.mainVisual}
                       imageType="cover"
                       context={{
                         positioning: draftContent.positioning,
@@ -340,10 +601,53 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
                   </div>
                   {/* 右侧：规划信息 */}
                   <div className="flex-1 space-y-2 text-sm">
-                    <p><strong>类型：</strong>{draftContent.cover.type}</p>
-                    <p><strong>主视觉：</strong>{draftContent.cover.mainVisual}</p>
-                    <p><strong>文案：</strong>{draftContent.cover.copywriting}</p>
-                    <p><strong>配色：</strong>{draftContent.cover.colorScheme}</p>
+                    {isEditing ? (
+                      <>
+                        <div>
+                          <Label className="text-xs font-semibold">类型</Label>
+                          <Input
+                            value={editedCoverType}
+                            onChange={(e) => setEditedCoverType(e.target.value)}
+                            placeholder="封面类型"
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs font-semibold">主视觉</Label>
+                          <Textarea
+                            value={editedCoverMainVisual}
+                            onChange={(e) => setEditedCoverMainVisual(e.target.value)}
+                            placeholder="主视觉描述"
+                            className="mt-1 min-h-[60px]"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs font-semibold">文案</Label>
+                          <Textarea
+                            value={editedCoverCopywriting}
+                            onChange={(e) => setEditedCoverCopywriting(e.target.value)}
+                            placeholder="封面文案"
+                            className="mt-1 min-h-[60px]"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs font-semibold">配色</Label>
+                          <Input
+                            value={editedCoverColorScheme}
+                            onChange={(e) => setEditedCoverColorScheme(e.target.value)}
+                            placeholder="配色方案"
+                            className="mt-1"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p><strong>类型：</strong>{editedCoverType || draftContent.cover.type}</p>
+                        <p><strong>主视觉：</strong>{editedCoverMainVisual || draftContent.cover.mainVisual}</p>
+                        <p><strong>文案：</strong>{editedCoverCopywriting || draftContent.cover.copywriting}</p>
+                        <p><strong>配色：</strong>{editedCoverColorScheme || draftContent.cover.colorScheme}</p>
+                      </>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -362,7 +666,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
                     {/* 左侧：图片生成 */}
                     <div className="w-40 flex-shrink-0">
                       <ImageGenerator
-                        prompt={img.content}
+                        prompt={editedImages[i]?.content || img.content}
                         imageType="content"
                         context={{
                           positioning: draftContent.positioning,
@@ -372,9 +676,9 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
                           allImages: draftContent.images,
                           currentImage: {
                             index: img.index || i + 1,
-                            type: img.type,
-                            content: img.content,
-                            overlay: img.overlay,
+                            type: editedImages[i]?.type || img.type,
+                            content: editedImages[i]?.content || img.content,
+                            overlay: editedImages[i]?.overlay || img.overlay,
                             tips: img.tips,
                           },
                         }}
@@ -389,9 +693,130 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
                     </div>
                     {/* 右侧：规划信息 */}
                     <div className="flex-1 text-sm">
-                      <p className="font-medium mb-2">图 {img.index || i + 1}: {img.type}</p>
-                      <p className="text-muted-foreground">{img.content}</p>
-                      {img.overlay && <p className="text-muted-foreground mt-1">文字：{img.overlay}</p>}
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="font-medium">图 {img.index || i + 1}: {editedImages[i]?.type || img.type}</p>
+                        <div className="relative">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openImageRegenDialog(i)}
+                            disabled={regeneratingImageIndex === i}
+                            title="重新生成配图规划"
+                            className="h-6 w-6 p-0"
+                          >
+                            {regeneratingImageIndex === i ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3 w-3" />
+                            )}
+                          </Button>
+                          {/* 配图重新生成原因选择弹窗 */}
+                          {showImageRegenDialog === i && (
+                            <div className="absolute top-full right-0 mt-2 z-50 bg-white border rounded-lg shadow-lg p-4 w-64">
+                              <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-medium">选择重新生成的原因：</p>
+                                <button
+                                  onClick={closeRegenDialog}
+                                  className="text-gray-400 hover:text-gray-600"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                              <div className="space-y-2">
+                                {IMAGE_REGENERATE_REASONS.map(reason => (
+                                  <label key={reason.value} className="flex items-center gap-2 text-sm cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name={`imageReason-${i}`}
+                                      value={reason.value}
+                                      checked={selectedReason === reason.value}
+                                      onChange={(e) => setSelectedReason(e.target.value)}
+                                      className="accent-primary"
+                                    />
+                                    {reason.label}
+                                  </label>
+                                ))}
+                              </div>
+                              {selectedReason === 'other' && (
+                                <Input
+                                  className="mt-2"
+                                  placeholder="请输入具体原因"
+                                  value={customReason}
+                                  onChange={(e) => setCustomReason(e.target.value)}
+                                />
+                              )}
+                              <div className="flex gap-2 mt-4">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="flex-1"
+                                  onClick={closeRegenDialog}
+                                >
+                                  取消
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="flex-1"
+                                  disabled={!selectedReason || (selectedReason === 'other' && !customReason)}
+                                  onClick={() => handleRegenerateImagePlan(i)}
+                                >
+                                  确定
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          <div>
+                            <Label className="text-xs font-semibold">类型</Label>
+                            <Input
+                              value={editedImages[i]?.type || ''}
+                              onChange={(e) => {
+                                const newImages = [...editedImages]
+                                newImages[i] = { ...newImages[i], type: e.target.value }
+                                setEditedImages(newImages)
+                              }}
+                              placeholder="配图类型"
+                              className="mt-1"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs font-semibold">内容描述</Label>
+                            <Textarea
+                              value={editedImages[i]?.content || ''}
+                              onChange={(e) => {
+                                const newImages = [...editedImages]
+                                newImages[i] = { ...newImages[i], content: e.target.value }
+                                setEditedImages(newImages)
+                              }}
+                              placeholder="配图内容描述"
+                              className="mt-1 min-h-[60px]"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs font-semibold">文字叠加</Label>
+                            <Input
+                              value={editedImages[i]?.overlay || ''}
+                              onChange={(e) => {
+                                const newImages = [...editedImages]
+                                newImages[i] = { ...newImages[i], overlay: e.target.value }
+                                setEditedImages(newImages)
+                              }}
+                              placeholder="图片上的文字"
+                              className="mt-1"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-muted-foreground">{editedImages[i]?.content || img.content}</p>
+                          {(editedImages[i]?.overlay || img.overlay) && (
+                            <p className="text-muted-foreground mt-1">文字：{editedImages[i]?.overlay || img.overlay}</p>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
