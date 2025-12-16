@@ -6,7 +6,6 @@ import { uploadToOSS } from '@/lib/oss/client'
 
 interface SignParams {
   userFlag?: string
-  mode?: 'create' | 'edit'
   templateId?: string
   designId?: string
   uploadImgUrl?: string
@@ -44,7 +43,7 @@ export async function signChuangkitRequest(
   params: SignParams = {}
 ): Promise<{ success: boolean; params?: Record<string, unknown>; error?: string }> {
   try {
-    const { userFlag = 'anonymous', mode = 'create', templateId, designId, uploadImgUrl, uploadImgWidth, uploadImgHeight } = params
+    const { userFlag = 'anonymous', templateId, designId, uploadImgUrl, uploadImgWidth, uploadImgHeight } = params
 
     const appId = process.env.CHUANGKIT_APP_ID
     const appSecret = process.env.CHUANGKIT_APP_SECRET
@@ -64,7 +63,6 @@ export async function signChuangkitRequest(
       app_id: appId,
       expire_time: expireTime,
       user_flag: userFlag,
-      mode,
       device_type: 1, // web端
       version: '2.0',
       sign,
@@ -81,9 +79,14 @@ export async function signChuangkitRequest(
       editorParams.setting_code = settingCode
     }
 
-    // 创建模式设置画布
-    if (mode === 'create') {
-      // 如果有自定义尺寸，使用 kind_id: 127 (px单位) 创建自定义画布
+    // 如果有 designId，直接编辑已有设计稿（SDK 会自动加载）
+    if (designId) {
+      editorParams.design_id = designId
+      console.log('Chuangkit: Edit mode - loading design:', designId)
+      // 编辑模式下不需要设置 kind_id、width、height 等，设计稿已包含这些信息
+    } else {
+      console.log('Chuangkit: Create mode')
+      // 创建模式设置画布
       if (uploadImgWidth && uploadImgWidth > 0 && uploadImgHeight && uploadImgHeight > 0) {
         editorParams.kind_id = 127 // 自定义尺寸场景 (px)
         editorParams.width = uploadImgWidth
@@ -92,26 +95,23 @@ export async function signChuangkitRequest(
       } else {
         editorParams.kind_id = 502 // 默认小红书封面场景
       }
-    }
 
-    if (templateId && !designId) {
-      editorParams.template_id = templateId
-    }
+      if (templateId) {
+        editorParams.template_id = templateId
+      }
 
-    if (designId) {
-      editorParams.design_id = designId
-    }
-
-    if (uploadImgUrl) {
-      editorParams.upload_img_url = uploadImgUrl
-      // 根据文档，使用 upload_img_url 时需要同时设置以下参数
-      if (uploadImgWidth && uploadImgWidth > 0) {
-        editorParams.upload_img_width = uploadImgWidth
-        editorParams.upload_img_top = 0 // 图片放置在画布顶部
-        editorParams.upload_img_left = 0 // 图片放置在画布左侧
+      if (uploadImgUrl) {
+        editorParams.upload_img_url = uploadImgUrl
+        // 根据文档，使用 upload_img_url 时需要同时设置以下参数
+        if (uploadImgWidth && uploadImgWidth > 0) {
+          editorParams.upload_img_width = uploadImgWidth
+          editorParams.upload_img_top = 0 // 图片放置在画布顶部
+          editorParams.upload_img_left = 0 // 图片放置在画布左侧
+        }
       }
     }
 
+    console.log('Chuangkit editorParams:', JSON.stringify(editorParams, null, 2))
     return { success: true, params: editorParams }
   } catch (error) {
     console.error('Chuangkit Sign Error:', error)

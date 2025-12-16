@@ -16,6 +16,7 @@ interface ChuangkitCompleteResult {
   cktMessage?: boolean
   page_thumb_urls?: string[]
   design_id?: string
+  'design-id'?: string  // SDK 在某些情况下使用连字符格式
   [key: string]: unknown
 }
 
@@ -85,6 +86,8 @@ export function ChuangkitEditor({
     setIsLoading(true)
     setError(null)
 
+    console.log('ChuangkitEditor: Initializing with designId:', designId)
+
     try {
       // 动态导入 SDK - chuangkit-design 是 UMD 模块
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -95,10 +98,10 @@ export function ChuangkitEditor({
 
       console.log('CktDesign loaded:', CktDesign)
 
-      // 获取图片尺寸（如果有图片）
+      // 获取图片尺寸（如果有图片且不是编辑模式）
       let uploadImgWidth: number | undefined
       let uploadImgHeight: number | undefined
-      if (imageUrl) {
+      if (imageUrl && !designId) {
         try {
           const dimensions = await getImageDimensions(imageUrl)
           uploadImgWidth = dimensions.width
@@ -110,10 +113,9 @@ export function ChuangkitEditor({
       }
 
       // 获取签名和参数
-      // 如果有 designId，使用编辑模式；否则使用创建模式
+      // 如果有 designId，SDK 会自动加载已有设计稿
       const signResult = await signChuangkitRequest({
         userFlag,
-        mode: designId ? 'edit' : 'create',
         designId,
         uploadImgUrl: designId ? undefined : imageUrl,  // 编辑模式不需要上传图片
         uploadImgWidth: designId ? undefined : uploadImgWidth,
@@ -131,15 +133,19 @@ export function ChuangkitEditor({
       window.chuangkitComplete = async (result: ChuangkitCompleteResult) => {
         console.log('chuangkitComplete:', result)
         if (result.cktMessage && result.page_thumb_urls && result.page_thumb_urls.length > 0) {
+          // 获取 design_id（SDK 可能使用 design_id 或 design-id）
+          const resultDesignId = result.design_id || result['design-id']
+          console.log('Design ID from result:', resultDesignId)
+
           // 将创客贴的图片上传到我们的 OSS
           const uploadResult = await uploadChuangkitImagesToOSS(result.page_thumb_urls)
           if (uploadResult.success && uploadResult.urls) {
             console.log('Images uploaded to OSS:', uploadResult.urls)
-            onComplete?.(uploadResult.urls, result.design_id)
+            onComplete?.(uploadResult.urls, resultDesignId)
           } else {
             console.error('Failed to upload images to OSS:', uploadResult.error)
             // 如果上传失败，回退使用创客贴的 URL
-            onComplete?.(result.page_thumb_urls, result.design_id)
+            onComplete?.(result.page_thumb_urls, resultDesignId)
             onError?.(uploadResult.error || '上传图片到 OSS 失败')
           }
         }
