@@ -4,8 +4,10 @@ import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Loader2, Sparkles, RefreshCw, X, ImagePlus, ZoomIn } from 'lucide-react'
+import { Loader2, Sparkles, RefreshCw, X, ImagePlus, ZoomIn, Pencil } from 'lucide-react'
 import { uploadBase64Image } from '@/lib/utils/image'
+import { ChuangkitEditor } from './ChuangkitEditor'
+import { generateImage, generateImagePrompt, analyzeReferenceImage } from '@/actions/image'
 import type { GenerationResult, ImagePlan, CreationFormData } from '@/types/creation'
 
 // 预设的重新生成原因
@@ -92,6 +94,9 @@ export function ImageGenerator({
   // 图片放大查看状态
   const [showZoomModal, setShowZoomModal] = useState(false)
 
+  // 创客贴编辑器状态
+  const [showChuangkitEditor, setShowChuangkitEditor] = useState(false)
+
   React.useEffect(() => {
     if (initialImageUrl) {
       if (initialImageUrl.startsWith('data:')) {
@@ -174,28 +179,20 @@ export function ImageGenerator({
       ]
 
       // 第一步: 生成图片提示词
-      const promptResponse = await fetch('/api/image/generate-prompt', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageType,
-          context,
-          feedbackExamples: allFeedback,
-          faceSeed,
-          referenceImageAnalysis,
-        }),
+      const promptResult = await generateImagePrompt({
+        imageType,
+        context: context || {},
+        feedbackExamples: allFeedback,
+        faceSeed: faceSeed || undefined,
+        referenceImageAnalysis,
       })
 
-      if (!promptResponse.ok) {
-        const errorData = await promptResponse.json()
-        throw new Error(errorData.error || '提示词生成失败')
+      if (!promptResult.success || !promptResult.prompt) {
+        throw new Error(promptResult.error || '提示词生成失败')
       }
 
-      const promptData = await promptResponse.json()
-      const aiGeneratedPrompt = promptData.prompt
-      const newFaceSeed = promptData.faceSeed
+      const aiGeneratedPrompt = promptResult.prompt
+      const newFaceSeed = promptResult.faceSeed
 
       setGeneratedPrompt(aiGeneratedPrompt)
 
@@ -205,76 +202,63 @@ export function ImageGenerator({
       }
 
       // 第二步: 使用生成的提示词生成图片
-      const response = await fetch('/api/image/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const imageResult = await generateImage({
+        prompt: aiGeneratedPrompt,
+        imageType,
+        context: {
+          topic: context?.formData?.topic,
+          contentType: context?.positioning?.contentType,
+          keywords: context?.positioning?.keywords,
+          targetAudience: context?.positioning?.targetAudience,
+          tone: context?.positioning?.tone,
+          coverCopywriting: context?.cover?.copywriting,
+          colorScheme: context?.cover?.colorScheme,
+          overlay: context?.currentImage?.overlay,
+          imageContent: context?.currentImage?.content,
+          imageIndex: context?.currentImage?.index,
+          totalImages: context?.allImages?.length,
+          contentStructure: context?.content?.structure,
+          contentBody: context?.content?.body,
         },
-        body: JSON.stringify({
-          prompt: aiGeneratedPrompt,
-          imageType,
-          context: {
-            topic: context?.formData?.topic,
-            contentType: context?.positioning?.contentType,
-            keywords: context?.positioning?.keywords,
-            targetAudience: context?.positioning?.targetAudience,
-            tone: context?.positioning?.tone,
-            coverCopywriting: context?.cover?.copywriting,
-            colorScheme: context?.cover?.colorScheme,
-            overlay: context?.currentImage?.overlay,
-            imageContent: context?.currentImage?.content,
-            imageIndex: context?.currentImage?.index,
-            totalImages: context?.allImages?.length,
-            contentStructure: context?.content?.structure,
-            contentBody: context?.content?.body,
-          },
-          aspectRatio,
-        }),
+        aspectRatio,
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || '图片生成失败')
+      if (!imageResult.success || !imageResult.imageUrl) {
+        throw new Error(imageResult.error || '图片生成失败')
       }
 
-      const data = await response.json()
+      let finalImageUrl = imageResult.imageUrl
+      let displayImageUrl = imageResult.imageUrl
 
-      if (data.success && data.imageUrl) {
-        let finalImageUrl = data.imageUrl
-        let displayImageUrl = data.imageUrl
+      // 如果是 base64 图片，先上传到 OSS
+      if (imageResult.imageUrl.startsWith('data:')) {
+        try {
+          // 上传到 OSS 获取永久 URL
+          const ossUrl = await uploadBase64Image(
+            imageResult.imageUrl,
+            `${imageType}-${Date.now()}`
+          )
+          finalImageUrl = ossUrl
 
-        // 如果是 base64 图片，先上传到 OSS
-        if (data.imageUrl.startsWith('data:')) {
-          try {
-            // 上传到 OSS 获取永久 URL
-            const ossUrl = await uploadBase64Image(
-              data.imageUrl,
-              `${imageType}-${Date.now()}`
-            )
-            finalImageUrl = ossUrl
+          // 为本地显示创建 blob URL
+          const blob = await fetch(imageResult.imageUrl).then(r => r.blob())
+          const blobUrl = URL.createObjectURL(blob)
 
-            // 为本地显示创建 blob URL
-            const blob = await fetch(data.imageUrl).then(r => r.blob())
-            const blobUrl = URL.createObjectURL(blob)
-
-            if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
-              URL.revokeObjectURL(createdBlobUrl)
-            }
-
-            setCreatedBlobUrl(blobUrl)
-            displayImageUrl = blobUrl
-          } catch (e) {
-            console.error('Failed to upload image to OSS:', e)
-            // 上传失败时仍然使用原始 base64
-            finalImageUrl = data.imageUrl
+          if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(createdBlobUrl)
           }
-        }
 
-        setImageUrl(displayImageUrl)
-        onImageGenerated?.(finalImageUrl, aiGeneratedPrompt)
-      } else {
-        throw new Error('未能获取图片 URL')
+          setCreatedBlobUrl(blobUrl)
+          displayImageUrl = blobUrl
+        } catch (e) {
+          console.error('Failed to upload image to OSS:', e)
+          // 上传失败时仍然使用原始 base64
+          finalImageUrl = imageResult.imageUrl
+        }
       }
+
+      setImageUrl(displayImageUrl)
+      onImageGenerated?.(finalImageUrl, aiGeneratedPrompt)
     } catch (err: unknown) {
       console.error('Image generation error:', err)
       const errorMessage = err instanceof Error ? err.message : '图片生成失败'
@@ -291,27 +275,19 @@ export function ImageGenerator({
     try {
       const feedbackExamples = propFeedbackExamples || []
 
-      const promptResponse = await fetch('/api/image/generate-prompt', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageType,
-          context,
-          feedbackExamples,
-          // 不传递 faceSeed，生成新的人脸种子
-        }),
+      const promptResult = await generateImagePrompt({
+        imageType,
+        context: context || {},
+        feedbackExamples,
+        // 不传递 faceSeed，生成新的人脸种子
       })
 
-      if (!promptResponse.ok) {
-        const errorData = await promptResponse.json()
-        throw new Error(errorData.error || '提示词生成失败')
+      if (!promptResult.success || !promptResult.prompt) {
+        throw new Error(promptResult.error || '提示词生成失败')
       }
 
-      const promptData = await promptResponse.json()
-      const aiGeneratedPrompt = promptData.prompt
-      const newFaceSeed = promptData.faceSeed
+      const aiGeneratedPrompt = promptResult.prompt
+      const newFaceSeed = promptResult.faceSeed
 
       setGeneratedPrompt(aiGeneratedPrompt)
 
@@ -320,76 +296,63 @@ export function ImageGenerator({
         onFaceSeedGenerated?.(newFaceSeed)
       }
 
-      const response = await fetch('/api/image/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const imageResult = await generateImage({
+        prompt: aiGeneratedPrompt,
+        imageType,
+        context: {
+          topic: context?.formData?.topic,
+          contentType: context?.positioning?.contentType,
+          keywords: context?.positioning?.keywords,
+          targetAudience: context?.positioning?.targetAudience,
+          tone: context?.positioning?.tone,
+          coverCopywriting: context?.cover?.copywriting,
+          colorScheme: context?.cover?.colorScheme,
+          overlay: context?.currentImage?.overlay,
+          imageContent: context?.currentImage?.content,
+          imageIndex: context?.currentImage?.index,
+          totalImages: context?.allImages?.length,
+          contentStructure: context?.content?.structure,
+          contentBody: context?.content?.body,
         },
-        body: JSON.stringify({
-          prompt: aiGeneratedPrompt,
-          imageType,
-          context: {
-            topic: context?.formData?.topic,
-            contentType: context?.positioning?.contentType,
-            keywords: context?.positioning?.keywords,
-            targetAudience: context?.positioning?.targetAudience,
-            tone: context?.positioning?.tone,
-            coverCopywriting: context?.cover?.copywriting,
-            colorScheme: context?.cover?.colorScheme,
-            overlay: context?.currentImage?.overlay,
-            imageContent: context?.currentImage?.content,
-            imageIndex: context?.currentImage?.index,
-            totalImages: context?.allImages?.length,
-            contentStructure: context?.content?.structure,
-            contentBody: context?.content?.body,
-          },
-          aspectRatio,
-        }),
+        aspectRatio,
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || '图片生成失败')
+      if (!imageResult.success || !imageResult.imageUrl) {
+        throw new Error(imageResult.error || '图片生成失败')
       }
 
-      const data = await response.json()
+      let finalImageUrl = imageResult.imageUrl
+      let displayImageUrl = imageResult.imageUrl
 
-      if (data.success && data.imageUrl) {
-        let finalImageUrl = data.imageUrl
-        let displayImageUrl = data.imageUrl
+      // 如果是 base64 图片，先上传到 OSS
+      if (imageResult.imageUrl.startsWith('data:')) {
+        try {
+          // 上传到 OSS 获取永久 URL
+          const ossUrl = await uploadBase64Image(
+            imageResult.imageUrl,
+            `${imageType}-${Date.now()}`
+          )
+          finalImageUrl = ossUrl
 
-        // 如果是 base64 图片，先上传到 OSS
-        if (data.imageUrl.startsWith('data:')) {
-          try {
-            // 上传到 OSS 获取永久 URL
-            const ossUrl = await uploadBase64Image(
-              data.imageUrl,
-              `${imageType}-${Date.now()}`
-            )
-            finalImageUrl = ossUrl
+          // 为本地显示创建 blob URL
+          const blob = await fetch(imageResult.imageUrl).then(r => r.blob())
+          const blobUrl = URL.createObjectURL(blob)
 
-            // 为本地显示创建 blob URL
-            const blob = await fetch(data.imageUrl).then(r => r.blob())
-            const blobUrl = URL.createObjectURL(blob)
-
-            if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
-              URL.revokeObjectURL(createdBlobUrl)
-            }
-
-            setCreatedBlobUrl(blobUrl)
-            displayImageUrl = blobUrl
-          } catch (e) {
-            console.error('Failed to upload image to OSS:', e)
-            // 上传失败时仍然使用原始 base64
-            finalImageUrl = data.imageUrl
+          if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(createdBlobUrl)
           }
-        }
 
-        setImageUrl(displayImageUrl)
-        onImageGenerated?.(finalImageUrl, aiGeneratedPrompt)
-      } else {
-        throw new Error('未能获取图片 URL')
+          setCreatedBlobUrl(blobUrl)
+          displayImageUrl = blobUrl
+        } catch (e) {
+          console.error('Failed to upload image to OSS:', e)
+          // 上传失败时仍然使用原始 base64
+          finalImageUrl = imageResult.imageUrl
+        }
       }
+
+      setImageUrl(displayImageUrl)
+      onImageGenerated?.(finalImageUrl, aiGeneratedPrompt)
     } catch (err: unknown) {
       console.error('Change face error:', err)
       const errorMessage = err instanceof Error ? err.message : '切换人脸失败'
@@ -436,14 +399,9 @@ export function ImageGenerator({
     if (referenceImage) {
       setIsAnalyzingReference(true)
       try {
-        const analyzeResponse = await fetch('/api/image/analyze-reference', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: referenceImage }),
-        })
-        if (analyzeResponse.ok) {
-          const analyzeData = await analyzeResponse.json()
-          analysisResult = analyzeData.analysis
+        const analyzeResult = await analyzeReferenceImage(referenceImage)
+        if (analyzeResult.success && analyzeResult.analysis) {
+          analysisResult = analyzeResult.analysis
         }
       } catch (e) {
         console.error('Failed to analyze reference image:', e)
@@ -477,14 +435,23 @@ export function ImageGenerator({
             alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
             className="w-full h-full object-cover"
           />
-          {/* 放大按钮 */}
-          <button
-            onClick={() => setShowZoomModal(true)}
-            className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
-            title="查看大图"
-          >
-            <ZoomIn className="h-3.5 w-3.5" />
-          </button>
+          {/* 操作按钮 */}
+          <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => setShowChuangkitEditor(true)}
+              className="p-1 bg-black/50 text-white rounded-full hover:bg-black/70"
+              title="编辑图片"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setShowZoomModal(true)}
+              className="p-1 bg-black/50 text-white rounded-full hover:bg-black/70"
+              title="查看大图"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -659,14 +626,23 @@ export function ImageGenerator({
                 alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
                 className="w-full h-auto rounded-lg"
               />
-              {/* 放大按钮 */}
-              <button
-                onClick={() => setShowZoomModal(true)}
-                className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
-                title="查看大图"
-              >
-                <ZoomIn className="h-4 w-4" />
-              </button>
+              {/* 操作按钮 */}
+              <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => setShowChuangkitEditor(true)}
+                  className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/70"
+                  title="编辑图片"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setShowZoomModal(true)}
+                  className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/70"
+                  title="查看大图"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -699,6 +675,29 @@ export function ImageGenerator({
           />
         </div>
       )}
+
+      {/* 创客贴编辑器 */}
+      <ChuangkitEditor
+        open={showChuangkitEditor}
+        imageUrl={imageUrl || undefined}
+        onComplete={async (imageUrls) => {
+          if (imageUrls.length > 0) {
+            const newImageUrl = imageUrls[0]
+            setImageUrl(newImageUrl)
+            // 通知父组件图片已更新
+            if (generatedPrompt) {
+              onImageGenerated?.(newImageUrl, generatedPrompt)
+            }
+          }
+          setShowChuangkitEditor(false)
+        }}
+        onClose={() => setShowChuangkitEditor(false)}
+        onError={(error) => {
+          console.error('Chuangkit Editor Error:', error)
+          setError(error)
+          setShowChuangkitEditor(false)
+        }}
+      />
     </div>
   )
 }
