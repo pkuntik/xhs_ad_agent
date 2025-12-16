@@ -8,10 +8,10 @@ interface SignParams {
   templateId?: string
   designId?: string
   uploadImgUrl?: string
-  /** 画布宽度 */
-  width?: number
-  /** 画布高度 */
-  height?: number
+  /** 上传图片的宽度 */
+  uploadImgWidth?: number
+  /** 上传图片的高度 */
+  uploadImgHeight?: number
 }
 
 /**
@@ -42,11 +42,12 @@ export async function signChuangkitRequest(
   params: SignParams = {}
 ): Promise<{ success: boolean; params?: Record<string, unknown>; error?: string }> {
   try {
-    const { userFlag = 'anonymous', mode = 'create', templateId, designId, uploadImgUrl, width, height } = params
+    const { userFlag = 'anonymous', mode = 'create', templateId, designId, uploadImgUrl, uploadImgWidth, uploadImgHeight } = params
 
     const appId = process.env.CHUANGKIT_APP_ID
     const appSecret = process.env.CHUANGKIT_APP_SECRET
     const settingCode = process.env.CHUANGKIT_SETTING_CODE
+    const editorSettingCode = process.env.CHUANGKIT_EDITOR_SETTING_CODE
 
     if (!appId || !appSecret) {
       return { success: false, error: '创客贴配置未设置' }
@@ -71,16 +72,24 @@ export async function signChuangkitRequest(
       z_index: '100',
     }
 
-    if (settingCode) {
+    // 优先使用编辑器配置代码，否则使用通用配置代码
+    if (editorSettingCode) {
+      editorParams.setting_code = editorSettingCode
+    } else if (settingCode) {
       editorParams.setting_code = settingCode
     }
 
-    // 如果提供了自定义尺寸，使用自定义画布；否则使用默认场景
-    if (width && height) {
-      editorParams.width = width
-      editorParams.height = height
-    } else if (mode === 'create') {
-      editorParams.kind_id = 502
+    // 创建模式设置画布
+    if (mode === 'create') {
+      // 如果有自定义尺寸，使用 kind_id: 127 (px单位) 创建自定义画布
+      if (uploadImgWidth && uploadImgWidth > 0 && uploadImgHeight && uploadImgHeight > 0) {
+        editorParams.kind_id = 127 // 自定义尺寸场景 (px)
+        editorParams.width = uploadImgWidth
+        editorParams.height = uploadImgHeight
+        editorParams.unit = 'px'
+      } else {
+        editorParams.kind_id = 502 // 默认小红书封面场景
+      }
     }
 
     if (templateId && !designId) {
@@ -93,6 +102,12 @@ export async function signChuangkitRequest(
 
     if (uploadImgUrl) {
       editorParams.upload_img_url = uploadImgUrl
+      // 根据文档，使用 upload_img_url 时需要同时设置以下参数
+      if (uploadImgWidth && uploadImgWidth > 0) {
+        editorParams.upload_img_width = uploadImgWidth
+        editorParams.upload_img_top = 0 // 图片放置在画布顶部
+        editorParams.upload_img_left = 0 // 图片放置在画布左侧
+      }
     }
 
     return { success: true, params: editorParams }

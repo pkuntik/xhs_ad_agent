@@ -93,11 +93,14 @@ export function ChuangkitEditor({
       console.log('CktDesign loaded:', CktDesign)
 
       // 获取图片尺寸（如果有图片）
-      let imageDimensions: { width: number; height: number } | undefined
+      let uploadImgWidth: number | undefined
+      let uploadImgHeight: number | undefined
       if (imageUrl) {
         try {
-          imageDimensions = await getImageDimensions(imageUrl)
-          console.log('Image dimensions:', imageDimensions)
+          const dimensions = await getImageDimensions(imageUrl)
+          uploadImgWidth = dimensions.width
+          uploadImgHeight = dimensions.height
+          console.log('Image dimensions:', dimensions)
         } catch (e) {
           console.warn('Failed to get image dimensions:', e)
         }
@@ -108,8 +111,8 @@ export function ChuangkitEditor({
         userFlag,
         mode: 'create',
         uploadImgUrl: imageUrl,
-        width: imageDimensions?.width,
-        height: imageDimensions?.height,
+        uploadImgWidth,
+        uploadImgHeight,
       })
 
       if (!signResult.success || !signResult.params) {
