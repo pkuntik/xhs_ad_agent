@@ -11,6 +11,13 @@ import { getCurrentUserId } from '@/lib/auth/session'
 import { deductBalance } from '@/lib/billing/service'
 
 /**
+ * 序列化 MongoDB 文档，将 ObjectId 和 Date 转换为字符串
+ */
+function serializeWork<T>(doc: T): T {
+  return JSON.parse(JSON.stringify(doc))
+}
+
+/**
  * 获取作品列表
  */
 export async function getWorks(accountId?: string): Promise<Work[]> {
@@ -24,7 +31,7 @@ export async function getWorks(accountId?: string): Promise<Work[]> {
     .sort({ createdAt: -1 })
     .toArray()
 
-  return works
+  return works.map(serializeWork)
 }
 
 /**
@@ -36,7 +43,7 @@ export async function getWorkById(id: string): Promise<Work | null> {
     .collection<Work>(COLLECTIONS.WORKS)
     .findOne({ _id: new ObjectId(id) })
 
-  return work
+  return work ? serializeWork(work) : null
 }
 
 /**
@@ -289,7 +296,7 @@ export async function getAvailableWorks(accountId: string): Promise<Work[]> {
     .sort({ performanceScore: -1, createdAt: -1 })
     .toArray()
 
-  return works
+  return works.map(serializeWork)
 }
 
 /**
@@ -317,7 +324,7 @@ export async function getNextBestWork(
       sort: { performanceScore: -1, consecutiveFailures: 1, createdAt: -1 },
     })
 
-  return work
+  return work ? serializeWork(work) : null
 }
 
 // ============ 发布码相关功能 ============
@@ -331,7 +338,7 @@ export async function getWorkByPublishCode(code: string): Promise<Work | null> {
     .collection<Work>(COLLECTIONS.WORKS)
     .findOne({ publishCode: code })
 
-  return work
+  return work ? serializeWork(work) : null
 }
 
 /**
@@ -352,10 +359,7 @@ export async function getPublishConfig(code: string): Promise<{
     // 生成签名配置（异步，需要获取 access_token）
     const verifyConfig = await generateVerifyConfig()
 
-    // 序列化 work 对象，将 ObjectId 和 Date 转换为字符串
-    const serializedWork = JSON.parse(JSON.stringify(work))
-
-    return { success: true, work: serializedWork, verifyConfig }
+    return { success: true, work, verifyConfig }
   } catch (error) {
     console.error('获取发布配置失败:', error)
     return { success: false, error: error instanceof Error ? error.message : '未知错误' }
