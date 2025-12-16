@@ -13,7 +13,11 @@
       "Bash(grep:*)",
       "Bash(pnpm:*)",
       "Bash(npx:*)",
-      "Bash(git -C \"e:\\2025\\xhs_ad_agent\" log --oneline -20)"
+      "Bash(git -C \"e:\\2025\\xhs_ad_agent\" log --oneline -20)",
+      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\api\\image\\generate\\route.ts\")",
+      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\api\\image\\generate-prompt\\route.ts\")",
+      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\api\\image\\analyze-reference\\route.ts\")",
+      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\api\\image\\upload\\route.ts\")"
     ]
   }
 }

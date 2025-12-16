@@ -29,12 +29,9 @@ export function Header({ title }: HeaderProps) {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        // 从 cookie 获取 userId 并加载用户信息
-        const response = await fetch('/api/auth/me')
-        if (response.ok) {
-          const data = await response.json()
-          setUser(data.user)
-        }
+        // 使用 Server Action 获取用户信息
+        const userInfo = await getCurrentUserInfo()
+        setUser(userInfo)
       } catch {
         // 忽略错误
       }

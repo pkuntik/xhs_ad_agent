@@ -2,6 +2,8 @@
  * 图片上传工具函数
  */
 
+import { uploadImage } from '@/actions/image'
+
 /**
  * 检查是否是 base64 图片数据
  */
@@ -20,24 +22,13 @@ export async function uploadBase64Image(
   base64Data: string,
   filename?: string
 ): Promise<string> {
-  const response = await fetch('/api/image/upload', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      imageData: base64Data,
-      filename,
-    }),
-  })
+  const result = await uploadImage(base64Data, filename)
 
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || '图片上传失败')
+  if (!result.success || !result.imageUrl) {
+    throw new Error(result.error || '图片上传失败')
   }
 
-  const data = await response.json()
-  return data.imageUrl
+  return result.imageUrl
 }
 
 /**

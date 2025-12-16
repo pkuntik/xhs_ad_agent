@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useCallback } from 'react'
+import { processPendingTasks } from '@/actions/task'
 
 interface UsePollingOptions {
   interval?: number      // 轮询间隔（毫秒），默认 5 分钟
@@ -29,15 +30,7 @@ export function useTaskPolling(options: UsePollingOptions = {}) {
 
     isRunningRef.current = true
     try {
-      const response = await fetch('/api/poll-tasks', {
-        method: 'POST',
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      const result = await response.json()
+      const result = await processPendingTasks()
       console.log('[Polling] 任务执行结果:', result)
     } catch (error) {
       console.error('[Polling] 任务执行失败:', error)

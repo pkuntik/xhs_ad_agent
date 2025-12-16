@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useCallback } from 'react'
 import { X, Loader2 } from 'lucide-react'
+import { signChuangkitRequest } from '@/actions/chuangkit'
 
 // 声明全局类型
 declare global {
@@ -79,22 +80,17 @@ export function ChuangkitEditor({
       console.log('CktDesign loaded:', CktDesign)
 
       // 获取签名和参数
-      const signResponse = await fetch('/api/chuangkit/sign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userFlag,
-          mode: 'create',
-          uploadImgUrl: imageUrl,
-        }),
+      const signResult = await signChuangkitRequest({
+        userFlag,
+        mode: 'create',
+        uploadImgUrl: imageUrl,
       })
 
-      if (!signResponse.ok) {
-        const errorData = await signResponse.json()
-        throw new Error(errorData.error || '获取签名失败')
+      if (!signResult.success || !signResult.params) {
+        throw new Error(signResult.error || '获取签名失败')
       }
 
-      const { params } = await signResponse.json()
+      const params = signResult.params
       console.log('Chuangkit params:', params)
 
       // 设置全局回调
@@ -112,8 +108,15 @@ export function ChuangkitEditor({
 
       // 创建编辑器实例
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      editorInstanceRef.current = new (CktDesign as any)(params)
-      console.log('Editor instance created:', editorInstanceRef.current)
+      const editorInstance = new (CktDesign as any)(params)
+      editorInstanceRef.current = editorInstance
+      console.log('Editor instance created:', editorInstance)
+
+      // 打开编辑器
+      if (editorInstance.open) {
+        editorInstance.open()
+        console.log('Editor opened')
+      }
 
       setIsLoading(false)
     } catch (err) {
