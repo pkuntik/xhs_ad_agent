@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useCallback } from 'react'
 import { Loader2 } from 'lucide-react'
-import { signChuangkitRequest } from '@/actions/chuangkit'
+import { signChuangkitRequest, uploadChuangkitImagesToOSS } from '@/actions/chuangkit'
 
 // 声明全局类型
 declare global {
@@ -123,10 +123,20 @@ export function ChuangkitEditor({
       console.log('Chuangkit params:', params)
 
       // 设置全局回调
-      window.chuangkitComplete = (result: ChuangkitCompleteResult) => {
+      window.chuangkitComplete = async (result: ChuangkitCompleteResult) => {
         console.log('chuangkitComplete:', result)
         if (result.cktMessage && result.page_thumb_urls && result.page_thumb_urls.length > 0) {
-          onComplete?.(result.page_thumb_urls, result.design_id)
+          // 将创客贴的图片上传到我们的 OSS
+          const uploadResult = await uploadChuangkitImagesToOSS(result.page_thumb_urls)
+          if (uploadResult.success && uploadResult.urls) {
+            console.log('Images uploaded to OSS:', uploadResult.urls)
+            onComplete?.(uploadResult.urls, result.design_id)
+          } else {
+            console.error('Failed to upload images to OSS:', uploadResult.error)
+            // 如果上传失败，回退使用创客贴的 URL
+            onComplete?.(result.page_thumb_urls, result.design_id)
+            onError?.(uploadResult.error || '上传图片到 OSS 失败')
+          }
         }
       }
 

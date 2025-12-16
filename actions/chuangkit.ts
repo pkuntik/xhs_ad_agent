@@ -1,6 +1,8 @@
 'use server'
 
 import md5 from 'crypto-js/md5'
+import { nanoid } from 'nanoid'
+import { uploadToOSS } from '@/lib/oss/client'
 
 interface SignParams {
   userFlag?: string
@@ -114,5 +116,50 @@ export async function signChuangkitRequest(
   } catch (error) {
     console.error('Chuangkit Sign Error:', error)
     return { success: false, error: error instanceof Error ? error.message : '签名生成失败' }
+  }
+}
+
+/**
+ * 将创客贴返回的图片 URL 下载并上传到我们的 OSS
+ * @param imageUrls 创客贴返回的图片 URL 数组
+ * @returns 上传到 OSS 后的 URL 数组
+ */
+export async function uploadChuangkitImagesToOSS(
+  imageUrls: string[]
+): Promise<{ success: boolean; urls?: string[]; error?: string }> {
+  try {
+    const uploadedUrls: string[] = []
+
+    for (let url of imageUrls) {
+      // 处理协议相对 URL（以 // 开头）
+      if (url.startsWith('//')) {
+        url = 'https:' + url
+      }
+
+      // 下载图片
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`下载图片失败: ${response.status}`)
+      }
+
+      const arrayBuffer = await response.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+
+      // 获取文件扩展名
+      const contentType = response.headers.get('content-type') || 'image/png'
+      const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg' : 'png'
+
+      // 生成唯一文件名
+      const fileName = `chuangkit/${Date.now()}-${nanoid(8)}.${ext}`
+
+      // 上传到 OSS
+      const ossUrl = await uploadToOSS(fileName, buffer, contentType)
+      uploadedUrls.push(ossUrl)
+    }
+
+    return { success: true, urls: uploadedUrls }
+  } catch (error) {
+    console.error('Upload Chuangkit images to OSS error:', error)
+    return { success: false, error: error instanceof Error ? error.message : '上传图片失败' }
   }
 }
