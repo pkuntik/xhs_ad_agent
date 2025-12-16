@@ -61,6 +61,20 @@ export function ChuangkitEditor({
     delete window.chuangkitClose
   }, [])
 
+  // 获取图片尺寸
+  const getImageDimensions = useCallback((url: string): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => {
+        resolve({ width: img.naturalWidth, height: img.naturalHeight })
+      }
+      img.onerror = () => {
+        reject(new Error('Failed to load image'))
+      }
+      img.src = url
+    })
+  }, [])
+
   // 初始化编辑器
   const initEditor = useCallback(async () => {
     if (!open) return
@@ -78,11 +92,24 @@ export function ChuangkitEditor({
 
       console.log('CktDesign loaded:', CktDesign)
 
+      // 获取图片尺寸（如果有图片）
+      let imageDimensions: { width: number; height: number } | undefined
+      if (imageUrl) {
+        try {
+          imageDimensions = await getImageDimensions(imageUrl)
+          console.log('Image dimensions:', imageDimensions)
+        } catch (e) {
+          console.warn('Failed to get image dimensions:', e)
+        }
+      }
+
       // 获取签名和参数
       const signResult = await signChuangkitRequest({
         userFlag,
         mode: 'create',
         uploadImgUrl: imageUrl,
+        width: imageDimensions?.width,
+        height: imageDimensions?.height,
       })
 
       if (!signResult.success || !signResult.params) {
@@ -125,7 +152,7 @@ export function ChuangkitEditor({
       setIsLoading(false)
       onError?.(errorMessage)
     }
-  }, [open, imageUrl, userFlag, onComplete, onClose, onError])
+  }, [open, imageUrl, userFlag, onComplete, onClose, onError, getImageDimensions])
 
   // 监听 open 状态变化
   useEffect(() => {

@@ -8,6 +8,10 @@ interface SignParams {
   templateId?: string
   designId?: string
   uploadImgUrl?: string
+  /** 画布宽度 */
+  width?: number
+  /** 画布高度 */
+  height?: number
 }
 
 /**
@@ -38,7 +42,7 @@ export async function signChuangkitRequest(
   params: SignParams = {}
 ): Promise<{ success: boolean; params?: Record<string, unknown>; error?: string }> {
   try {
-    const { userFlag = 'anonymous', mode = 'create', templateId, designId, uploadImgUrl } = params
+    const { userFlag = 'anonymous', mode = 'create', templateId, designId, uploadImgUrl, width, height } = params
 
     const appId = process.env.CHUANGKIT_APP_ID
     const appSecret = process.env.CHUANGKIT_APP_SECRET
@@ -71,7 +75,11 @@ export async function signChuangkitRequest(
       editorParams.setting_code = settingCode
     }
 
-    if (mode === 'create') {
+    // 如果提供了自定义尺寸，使用自定义画布；否则使用默认场景
+    if (width && height) {
+      editorParams.width = width
+      editorParams.height = height
+    } else if (mode === 'create') {
       editorParams.kind_id = 502
     }
 
