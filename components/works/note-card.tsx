@@ -24,16 +24,18 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
-  User,
   Loader2,
   Trash2,
   History,
+  Image as ImageIcon,
+  Play,
+  Clock,
+  Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { syncNoteData, deletePublication } from '@/actions/note'
 import { SyncLogDialog } from '@/components/works/sync-log-dialog'
 import type { Publication } from '@/types/work'
-import type { NoteSnapshot } from '@/types/note'
 
 interface NoteCardProps {
   publication: Publication
@@ -65,6 +67,19 @@ function TrendIcon({ trend }: { trend: 'up' | 'down' | 'stable' }) {
   return <Minus className="h-3 w-3 text-gray-400" />
 }
 
+function formatTimeAgo(date: Date): string {
+  const now = new Date()
+  const diff = now.getTime() - new Date(date).getTime()
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+
+  if (minutes < 60) return `${minutes}分钟前`
+  if (hours < 24) return `${hours}小时前`
+  if (days < 30) return `${days}天前`
+  return new Date(date).toLocaleDateString('zh-CN')
+}
+
 export function NoteCard({ publication, workId, index, onRefresh, onDelete }: NoteCardProps) {
   const [syncing, setSyncing] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -86,11 +101,14 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
       const result = await syncNoteData(workId, index)
       if (!result.success) {
         setError(result.error || '同步失败')
+        toast.error(result.error || '同步失败')
       } else {
+        toast.success('数据已同步')
         onRefresh?.()
       }
     } catch {
       setError('同步失败')
+      toast.error('同步失败')
     } finally {
       setSyncing(false)
     }
@@ -200,59 +218,81 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
     )
   }
 
+  const isVideo = detail.noteType === '2'
+  const imagesCount = detail.images?.length || 0
+
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden hover:shadow-md transition-shadow">
       <CardContent className="p-0">
-        <div className="flex gap-3 p-3">
-          {/* 封面图 */}
-          {detail.coverImage && (
-            <div className="w-20 h-20 flex-shrink-0 rounded-md overflow-hidden bg-muted">
+        {/* 主内容区 */}
+        <div className="flex gap-4 p-4">
+          {/* 封面图 - 更大尺寸 */}
+          <div className="relative w-28 h-28 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
+            {detail.coverImage ? (
               <Image
                 src={detail.coverImage}
                 alt={detail.title}
-                width={80}
-                height={80}
-                className="w-full h-full object-cover"
+                fill
+                className="object-cover"
               />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <ImageIcon className="h-8 w-8 text-muted-foreground" />
+              </div>
+            )}
+            {/* 类型标识 */}
+            <div className="absolute top-1.5 left-1.5">
+              {isVideo ? (
+                <div className="bg-black/60 rounded-full p-1">
+                  <Play className="h-3 w-3 text-white fill-white" />
+                </div>
+              ) : imagesCount > 1 ? (
+                <div className="bg-black/60 rounded px-1.5 py-0.5 text-[10px] text-white font-medium">
+                  {imagesCount}图
+                </div>
+              ) : null}
             </div>
-          )}
+          </div>
 
           {/* 内容区 */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 flex flex-col">
             {/* 标题 */}
             <a
               href={publication.noteUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-sm hover:text-blue-600 line-clamp-2 flex items-start gap-1"
+              className="font-medium text-sm hover:text-blue-600 line-clamp-2 leading-snug group"
             >
-              <span className="flex-1">{detail.title}</span>
-              <ExternalLink className="h-3 w-3 flex-shrink-0 mt-0.5" />
+              {detail.title}
+              <ExternalLink className="inline-block h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
             </a>
 
-            {/* 作者信息 */}
-            <div className="flex items-center gap-2 mt-1.5">
+            {/* 内容预览 */}
+            {detail.content && (
+              <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2 leading-relaxed">
+                {detail.content.slice(0, 100)}
+              </p>
+            )}
+
+            {/* 作者和时间 */}
+            <div className="flex items-center gap-2 mt-auto pt-2">
               {detail.authorAvatar && (
                 <Image
                   src={detail.authorAvatar}
                   alt={detail.authorNickname}
-                  width={16}
-                  height={16}
-                  className="w-4 h-4 rounded-full"
+                  width={20}
+                  height={20}
+                  className="rounded-full"
                 />
               )}
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground font-medium">
                 {detail.authorNickname}
               </span>
-              <Badge variant="outline" className="text-xs h-4 px-1">
-                {detail.noteType === '1' ? '图文' : '视频'}
-              </Badge>
+              <span className="text-xs text-muted-foreground">·</span>
+              <span className="text-xs text-muted-foreground">
+                {detail.createDate}
+              </span>
             </div>
-
-            {/* 发布时间 */}
-            <p className="text-xs text-muted-foreground mt-1">
-              发布于 {detail.createDate}
-            </p>
           </div>
 
           {/* 操作按钮 */}
@@ -262,7 +302,7 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
                 variant="ghost"
                 size="icon"
                 onClick={() => setShowLogDialog(true)}
-                className="h-7 w-7"
+                className="h-8 w-8"
                 title="同步日志"
               >
                 <History className="h-4 w-4" />
@@ -272,7 +312,7 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
                 size="icon"
                 onClick={handleSync}
                 disabled={syncing}
-                className="h-7 w-7"
+                className="h-8 w-8"
                 title="同步数据"
               >
                 {syncing ? (
@@ -285,71 +325,97 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
                 variant="ghost"
                 size="icon"
                 onClick={() => setShowDeleteDialog(true)}
-                className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50"
+                className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
                 title="删除"
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
             {publication.lastSyncAt && (
-              <span className="text-[10px] text-muted-foreground">
-                {new Date(publication.lastSyncAt).toLocaleString('zh-CN', {
-                  month: 'numeric',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </span>
+              <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                <span>{formatTimeAgo(publication.lastSyncAt)}</span>
+              </div>
             )}
           </div>
         </div>
 
-        {/* 数据指标 */}
+        {/* 数据指标 - 更详细的展示 */}
         {latestSnapshot && (
-          <div className="border-t bg-muted/30 px-3 py-2">
-            <div className="grid grid-cols-6 gap-2 text-center">
+          <div className="border-t bg-gradient-to-r from-muted/30 to-muted/50 px-4 py-3">
+            <div className="grid grid-cols-6 gap-3">
               <StatItem
-                icon={<Eye className="h-3 w-3" />}
+                icon={<Eye className="h-4 w-4" />}
                 label="曝光"
                 value={latestSnapshot.impressions}
                 previousValue={previousSnapshot?.impressions}
+                color="text-blue-600"
               />
               <StatItem
-                icon={<BookOpen className="h-3 w-3" />}
+                icon={<BookOpen className="h-4 w-4" />}
                 label="阅读"
                 value={latestSnapshot.reads}
                 previousValue={previousSnapshot?.reads}
+                color="text-cyan-600"
               />
               <StatItem
-                icon={<Heart className="h-3 w-3" />}
+                icon={<Heart className="h-4 w-4" />}
                 label="点赞"
                 value={latestSnapshot.likes}
                 previousValue={previousSnapshot?.likes}
+                color="text-pink-600"
               />
               <StatItem
-                icon={<Bookmark className="h-3 w-3" />}
+                icon={<Bookmark className="h-4 w-4" />}
                 label="收藏"
                 value={latestSnapshot.collects}
                 previousValue={previousSnapshot?.collects}
+                color="text-yellow-600"
               />
               <StatItem
-                icon={<MessageCircle className="h-3 w-3" />}
+                icon={<MessageCircle className="h-4 w-4" />}
                 label="评论"
                 value={latestSnapshot.comments}
                 previousValue={previousSnapshot?.comments}
+                color="text-green-600"
               />
               <StatItem
-                icon={<User className="h-3 w-3" />}
+                icon={<Zap className="h-4 w-4" />}
                 label="互动"
                 value={latestSnapshot.interactions}
                 previousValue={previousSnapshot?.interactions}
+                color="text-orange-600"
               />
             </div>
+
+            {/* 互动率 */}
+            {latestSnapshot.impressions > 0 && (
+              <div className="mt-2 pt-2 border-t border-muted/50 flex items-center gap-4 text-xs">
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">阅读率:</span>
+                  <span className="font-medium text-cyan-600">
+                    {((latestSnapshot.reads / latestSnapshot.impressions) * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">互动率:</span>
+                  <span className="font-medium text-orange-600">
+                    {((latestSnapshot.interactions / latestSnapshot.impressions) * 100).toFixed(2)}%
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">收藏率:</span>
+                  <span className="font-medium text-yellow-600">
+                    {((latestSnapshot.collects / latestSnapshot.reads) * 100).toFixed(2)}%
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {error && (
-          <div className="border-t px-3 py-2">
+          <div className="border-t px-4 py-2 bg-red-50">
             <p className="text-xs text-red-500">{error}</p>
           </div>
         )}
@@ -392,24 +458,33 @@ function StatItem({
   label,
   value,
   previousValue,
+  color,
 }: {
   icon: React.ReactNode
   label: string
   value: number
   previousValue?: number
+  color?: string
 }) {
   const trend = previousValue !== undefined ? getTrend(value, previousValue) : 'stable'
+  const diff = previousValue !== undefined ? value - previousValue : 0
 
   return (
     <div className="flex flex-col items-center">
-      <div className="flex items-center gap-0.5 text-muted-foreground">
+      <div className={`${color || 'text-muted-foreground'}`}>
         {icon}
       </div>
-      <div className="flex items-center gap-0.5 mt-0.5">
-        <span className="text-xs font-medium">{formatNumber(value)}</span>
-        {previousValue !== undefined && <TrendIcon trend={trend} />}
+      <div className="flex items-center gap-0.5 mt-1">
+        <span className="text-sm font-semibold">{formatNumber(value)}</span>
       </div>
-      <span className="text-[10px] text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-0.5">
+        <span className="text-[10px] text-muted-foreground">{label}</span>
+        {previousValue !== undefined && diff !== 0 && (
+          <span className={`text-[10px] ${trend === 'up' ? 'text-green-500' : 'text-red-500'}`}>
+            {trend === 'up' ? '+' : ''}{formatNumber(diff)}
+          </span>
+        )}
+      </div>
     </div>
   )
 }

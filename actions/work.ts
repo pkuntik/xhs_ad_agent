@@ -421,7 +421,7 @@ export async function bindPublishedNote(
   input: BindNoteInput
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { noteId, noteUrl, accountId } = input
+    const { noteId, noteUrl, accountId, noteDetail, snapshot } = input
     const db = await getDb()
 
     // 先查询作品，检查是否已存在相同笔记
@@ -435,12 +435,23 @@ export async function bindPublishedNote(
       return { success: false, error: '该笔记已绑定，请勿重复添加' }
     }
 
-    // 创建新的发布记录
-    const publication = {
+    // 创建新的发布记录（包含详情和快照）
+    const publication: Record<string, unknown> = {
       noteId,
       noteUrl,
       accountId,
       publishedAt: new Date(),
+    }
+
+    // 添加笔记详情
+    if (noteDetail) {
+      publication.noteDetail = noteDetail
+    }
+
+    // 添加数据快照
+    if (snapshot) {
+      publication.snapshots = [snapshot]
+      publication.lastSyncAt = new Date()
     }
 
     // 使用 $push 添加到 publications 数组，同时更新兼容字段

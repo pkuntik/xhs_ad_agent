@@ -281,6 +281,8 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
         noteUrl: options.noteUrl,
         noteId: options.noteId,
         accountId: options.accountId,
+        noteDetail: options.noteDetail,
+        snapshot: options.snapshot,
       })
 
       if (result.success) {

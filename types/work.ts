@@ -69,6 +69,8 @@ export interface BindNoteInput {
   noteId?: string
   noteUrl: string
   accountId?: string
+  noteDetail?: CachedNoteDetail
+  snapshot?: NoteSnapshot
 }
 
 // 单次发布记录
