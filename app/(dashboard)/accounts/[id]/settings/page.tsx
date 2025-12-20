@@ -1,20 +1,20 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, RefreshCw, Loader2 } from 'lucide-react'
+import { ArrowLeft, Save, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import {
   getAccountById,
   updateAccount,
   updateAccountCookie,
+  updateAccountByPassword,
   updateAccountThresholds,
 } from '@/actions/account'
+import { AccountLoginForm, type LoginFormData } from '@/components/accounts/account-login-form'
 import type { AccountListItem } from '@/types/account'
 
 interface SettingsPageProps {
@@ -22,12 +22,11 @@ interface SettingsPageProps {
 }
 
 export default function AccountSettingsPage({ params }: SettingsPageProps) {
-  const router = useRouter()
   const [id, setId] = useState<string>('')
   const [account, setAccount] = useState<AccountListItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [savingCookie, setSavingCookie] = useState(false)
+  const [savingCredentials, setSavingCredentials] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // 表单状态
@@ -37,7 +36,6 @@ export default function AccountSettingsPage({ params }: SettingsPageProps) {
   const [minConsumption, setMinConsumption] = useState(100)
   const [maxCostPerLead, setMaxCostPerLead] = useState(50)
   const [maxFailRetries, setMaxFailRetries] = useState(3)
-  const [newCookie, setNewCookie] = useState('')
 
   useEffect(() => {
     params.then(({ id }) => {
@@ -99,26 +97,26 @@ export default function AccountSettingsPage({ params }: SettingsPageProps) {
     setSaving(false)
   }
 
-  async function handleUpdateCookie(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newCookie.trim()) {
-      setMessage({ type: 'error', text: '请输入新的 Cookie' })
-      return
-    }
-
-    setSavingCookie(true)
+  // 更新登录凭证
+  async function handleUpdateCredentials(data: LoginFormData) {
+    setSavingCredentials(true)
     setMessage(null)
 
-    const result = await updateAccountCookie(id, newCookie)
+    let result
+
+    if (data.loginType === 'cookie') {
+      result = await updateAccountCookie(id, data.cookie)
+    } else {
+      result = await updateAccountByPassword(id, data.email!, data.password!)
+    }
 
     if (result.success) {
-      setMessage({ type: 'success', text: 'Cookie 已更新' })
-      setNewCookie('')
+      setMessage({ type: 'success', text: '登录凭证已更新' })
       loadAccount(id) // 重新加载账号信息
     } else {
       setMessage({ type: 'error', text: result.error || '更新失败' })
     }
-    setSavingCookie(false)
+    setSavingCredentials(false)
   }
 
   if (loading) {
@@ -282,38 +280,34 @@ export default function AccountSettingsPage({ params }: SettingsPageProps) {
         </CardContent>
       </Card>
 
-      {/* 更新 Cookie */}
+      {/* 更新登录凭证 */}
       <Card>
         <CardHeader>
-          <CardTitle>更新 Cookie</CardTitle>
+          <CardTitle>更新登录凭证</CardTitle>
           <CardDescription>
-            当 Cookie 过期时，重新登录聚光平台获取新的 Cookie
+            当 Cookie 过期时，重新登录聚光平台更新凭证
+            {account.loginType === 'password' && account.loginEmail && (
+              <span className="block mt-1 text-green-600">
+                当前使用账号密码登录: {account.loginEmail}
+              </span>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleUpdateCookie} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="newCookie">新的 Cookie</Label>
-              <Textarea
-                id="newCookie"
-                value={newCookie}
-                onChange={(e) => setNewCookie(e.target.value)}
-                placeholder="粘贴新的 Cookie"
-                rows={4}
-              />
+          {savingCredentials ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">更新中...</span>
             </div>
-
-            <div className="flex justify-end">
-              <Button type="submit" disabled={savingCookie}>
-                {savingCookie ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                )}
-                更新 Cookie
-              </Button>
-            </div>
-          </form>
+          ) : (
+            <AccountLoginForm
+              defaultLoginType={account.loginType === 'password' ? 'password' : 'cookie'}
+              isUpdateMode
+              initialEmail={account.loginEmail}
+              onSuccess={handleUpdateCredentials}
+              showCancel={false}
+            />
+          )}
         </CardContent>
       </Card>
     </div>

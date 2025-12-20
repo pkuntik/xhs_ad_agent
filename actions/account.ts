@@ -231,6 +231,56 @@ export async function updateAccountCookie(
 }
 
 /**
+ * 使用账号密码更新登录凭证
+ */
+export async function updateAccountByPassword(
+  id: string,
+  email: string,
+  password: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // 登录获取新的 cookie
+    const loginResult = await loginWithEmailPassword(email, password)
+
+    if (!loginResult.success || !loginResult.cookie) {
+      return { success: false, error: loginResult.error || '登录失败' }
+    }
+
+    // 验证 Cookie 有效性
+    const cookieInfo = await validateCookie(loginResult.cookie)
+    if (!cookieInfo.valid) {
+      return { success: false, error: cookieInfo.errorMessage || '登录验证失败' }
+    }
+
+    const db = await getDb()
+
+    await db.collection(COLLECTIONS.ACCOUNTS).updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          cookie: loginResult.cookie,
+          loginType: 'password',
+          loginEmail: email,
+          visitorUserId: cookieInfo.userId || undefined,
+          advertiserId: cookieInfo.advertiserId || undefined,
+          balance: cookieInfo.balance || undefined,
+          status: 'active',
+          lastSyncAt: new Date(),
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    revalidatePath('/accounts')
+    revalidatePath(`/accounts/${id}`)
+    return { success: true }
+  } catch (error) {
+    console.error('使用账号密码更新登录凭证失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
  * 切换自动托管状态
  */
 export async function toggleAutoManage(
