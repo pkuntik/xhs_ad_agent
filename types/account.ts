@@ -46,6 +46,7 @@ export interface XhsAccount {
   // 登录信息
   loginType?: LoginType           // 登录方式
   loginEmail?: string             // 登录邮箱（账号密码登录时保存）
+  loginPassword?: string          // 登录密码（账号密码登录时保存）
 
   // 聚光平台信息（pending 状态时可能为空）
   advertiserId?: string           // 广告主 ID
@@ -95,5 +96,11 @@ export interface CreateAccountByPasswordInput {
   thresholds?: Partial<AccountThresholds>
 }
 
-// 账号列表项（不含敏感信息）
-export type AccountListItem = Omit<XhsAccount, 'cookie'>
+// 账号列表项（不含敏感信息，用于数据库查询）
+export type AccountListItemRaw = Omit<XhsAccount, 'cookie'>
+
+// 账号列表项（序列化后，用于客户端组件）
+export interface AccountListItem extends Omit<AccountListItemRaw, '_id' | 'userId'> {
+  _id: string
+  userId?: string
+}

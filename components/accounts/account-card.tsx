@@ -23,6 +23,7 @@ interface AccountCardProps {
 }
 
 const statusMap = {
+  pending: { label: '待完善', variant: 'outline' as const },
   active: { label: '正常', variant: 'success' as const },
   inactive: { label: '已停用', variant: 'secondary' as const },
   suspended: { label: '已暂停', variant: 'warning' as const },
@@ -60,6 +61,7 @@ export function AccountCard({ account }: AccountCardProps) {
   const status = statusMap[account.status] || statusMap.inactive
   const roleLabel = roleTypeMap[account.roleType || 0] || '未知角色'
   const certStatus = certificationMap[account.accountStatusDetail?.certificationState || 0] || certificationMap[0]
+  const isPending = account.status === 'pending'
 
   // 检查是否有异常
   const hasIssues = account.hasAbnormalIssues
@@ -162,61 +164,79 @@ export function AccountCard({ account }: AccountCardProps) {
 
       <CardContent className="pt-0">
         <div className="space-y-2.5">
-          {/* 余额 */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">账户余额</span>
-            <span className="text-lg font-semibold">
-              {formatMoney(account.balance)}
-            </span>
-          </div>
-
-          {/* 权限数量 */}
-          {account.permissionsCount !== undefined && account.permissionsCount > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">权限数量</span>
-              <span className="text-sm">{account.permissionsCount} 项</span>
-            </div>
-          )}
-
-          {/* 每日预算 */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">每日预算</span>
-            <span className="text-sm">{formatMoney(account.dailyBudget)}</span>
-          </div>
-
-          {/* 默认出价 */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">默认出价</span>
-            <span className="text-sm">
-              {formatMoney(account.defaultBidAmount)}
-            </span>
-          </div>
-
-          {/* 最后同步时间 */}
-          {account.lastSyncAt && (
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                最后同步
-              </span>
-              <span>{formatTimeAgo(account.lastSyncAt)}</span>
-            </div>
-          )}
-
-          {/* 分隔线和操作区 */}
-          <div className="border-t pt-3 mt-3">
-            <div className="flex items-center justify-between">
-              <AutoManageToggle
-                accountId={account._id.toString()}
-                initialEnabled={account.autoManaged}
-              />
+          {/* 待完善账号提示 */}
+          {isPending && (
+            <div className="text-center py-4 text-muted-foreground">
+              <p className="text-sm">请添加登录凭证完善账号信息</p>
               <Link href={`/accounts/${account._id}/settings`}>
-                <Button variant="ghost" size="icon">
-                  <Settings className="h-4 w-4" />
+                <Button variant="outline" size="sm" className="mt-2">
+                  <KeyRound className="h-4 w-4 mr-1" />
+                  添加凭证
                 </Button>
               </Link>
             </div>
-          </div>
+          )}
+
+          {/* 完整账号信息 */}
+          {!isPending && (
+            <>
+              {/* 余额 */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">账户余额</span>
+                <span className="text-lg font-semibold">
+                  {formatMoney(account.balance)}
+                </span>
+              </div>
+
+              {/* 权限数量 */}
+              {account.permissionsCount !== undefined && account.permissionsCount > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">权限数量</span>
+                  <span className="text-sm">{account.permissionsCount} 项</span>
+                </div>
+              )}
+
+              {/* 每日预算 */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">每日预算</span>
+                <span className="text-sm">{formatMoney(account.dailyBudget)}</span>
+              </div>
+
+              {/* 默认出价 */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">默认出价</span>
+                <span className="text-sm">
+                  {formatMoney(account.defaultBidAmount)}
+                </span>
+              </div>
+
+              {/* 最后同步时间 */}
+              {account.lastSyncAt && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    最后同步
+                  </span>
+                  <span>{formatTimeAgo(account.lastSyncAt)}</span>
+                </div>
+              )}
+
+              {/* 分隔线和操作区 */}
+              <div className="border-t pt-3 mt-3">
+                <div className="flex items-center justify-between">
+                  <AutoManageToggle
+                    accountId={account._id.toString()}
+                    initialEnabled={account.autoManaged ?? false}
+                  />
+                  <Link href={`/accounts/${account._id}/settings`}>
+                    <Button variant="ghost" size="icon">
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </CardContent>
     </Card>

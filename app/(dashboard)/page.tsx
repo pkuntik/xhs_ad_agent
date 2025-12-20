@@ -13,7 +13,7 @@ export default async function DashboardPage() {
   ])
 
   // 计算汇总数据（实际应从数据库聚合查询）
-  const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0)
+  const totalBalance = accounts.reduce((sum, acc) => sum + (acc.balance ?? 0), 0)
   const activeAccountsCount = accounts.filter(
     (acc) => acc.status === 'active' && acc.autoManaged
   ).length

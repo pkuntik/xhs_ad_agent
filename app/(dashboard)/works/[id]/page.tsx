@@ -87,8 +87,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     noteDetail: NoteDetail
     cachedDetail: CachedNoteDetail
     snapshot: NoteSnapshot
-    existingAccount?: { _id: string; name: string; visitorUserId: string }
-    linkedAuthor?: { _id: string; nickname: string; userId: string }
+    existingAccount?: { _id: string; name: string; visitorUserId: string; status: string }
   } | null>(null)
 
   // AI 图片生成相关状态
@@ -252,7 +251,6 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
         cachedDetail: result.cachedDetail,
         snapshot: result.snapshot,
         existingAccount: result.existingAccount,
-        linkedAuthor: result.linkedAuthor,
       })
       setShowBindingDialog(true)
     } catch (err) {
@@ -1090,7 +1088,6 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
           cachedDetail={pendingNoteData.cachedDetail}
           snapshot={pendingNoteData.snapshot}
           existingAccount={pendingNoteData.existingAccount}
-          linkedAuthor={pendingNoteData.linkedAuthor}
           onConfirm={handleConfirmBind}
           onCancel={handleCancelBind}
         />

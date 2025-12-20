@@ -85,7 +85,12 @@ export async function getAccounts(): Promise<AccountListItem[]> {
     .sort({ createdAt: -1 })
     .toArray()
 
-  return accounts as AccountListItem[]
+  // 序列化 ObjectId 和 Date 为客户端可用格式
+  return accounts.map(account => ({
+    ...account,
+    _id: account._id.toString(),
+    userId: account.userId?.toString(),
+  })) as AccountListItem[]
 }
 
 /**
@@ -100,7 +105,14 @@ export async function getAccountById(id: string): Promise<AccountListItem | null
       { projection: { cookie: 0 } }
     )
 
-  return account as AccountListItem | null
+  if (!account) return null
+
+  // 序列化 ObjectId 为客户端可用格式
+  return {
+    ...account,
+    _id: account._id.toString(),
+    userId: account.userId?.toString(),
+  } as AccountListItem
 }
 
 /**
@@ -290,6 +302,7 @@ export async function updateAccountByPassword(
           cookie: loginResult.cookie,
           loginType: 'password',
           loginEmail: email,
+          loginPassword: password,
           visitorUserId: cookieInfo.userId || undefined,
           nickname: cookieInfo.nickname,
           avatar: cookieInfo.avatar,
@@ -623,6 +636,7 @@ export async function createAccountByPassword(
       avatar: cookieInfo.avatar,
       loginType: 'password',
       loginEmail: email,
+      loginPassword: password,
       advertiserId: cookieInfo.advertiserId || '',
       sellerId: cookieInfo.sellerId,
       balance: cookieInfo.balance || 0,

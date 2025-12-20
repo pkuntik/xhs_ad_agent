@@ -8,19 +8,21 @@ export function cn(...inputs: ClassValue[]) {
 /**
  * 格式化金额（元）
  */
-export function formatMoney(amount: number): string {
+export function formatMoney(amount: number | undefined | null): string {
+  const value = amount ?? 0
   return new Intl.NumberFormat('zh-CN', {
     style: 'currency',
     currency: 'CNY',
     minimumFractionDigits: 2,
-  }).format(amount)
+  }).format(value)
 }
 
 /**
  * 格式化数字
  */
-export function formatNumber(num: number): string {
-  return new Intl.NumberFormat('zh-CN').format(num)
+export function formatNumber(num: number | undefined | null): string {
+  const value = num ?? 0
+  return new Intl.NumberFormat('zh-CN').format(value)
 }
 
 /**

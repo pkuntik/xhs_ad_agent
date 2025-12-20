@@ -29,6 +29,8 @@ interface AccountLoginFormProps {
   isUpdateMode?: boolean
   /** 初始邮箱（更新模式时使用） */
   initialEmail?: string
+  /** 初始密码（更新模式时使用） */
+  initialPassword?: string
   /** 验证成功后的回调 */
   onSuccess: (data: LoginFormData) => void
   /** 取消按钮点击回调 */
@@ -43,6 +45,7 @@ export function AccountLoginForm({
   defaultLoginType = 'password',
   isUpdateMode = false,
   initialEmail = '',
+  initialPassword = '',
   onSuccess,
   onCancel,
   showCancel = true,
@@ -51,7 +54,7 @@ export function AccountLoginForm({
   const [loginType, setLoginType] = useState<'cookie' | 'password'>(defaultLoginType)
   const [cookie, setCookie] = useState('')
   const [email, setEmail] = useState(initialEmail)
-  const [password, setPassword] = useState('')
+  const [password, setPassword] = useState(initialPassword)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -158,7 +161,7 @@ export function AccountLoginForm({
           <Label htmlFor="password">密码</Label>
           <Input
             id="password"
-            type="password"
+            type="text"
             placeholder="请输入密码"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

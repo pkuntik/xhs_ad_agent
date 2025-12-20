@@ -38,11 +38,7 @@ interface NoteBindingDialogProps {
     _id: string
     name: string
     visitorUserId: string
-  }
-  linkedAuthor?: {
-    _id: string
-    nickname: string
-    userId: string
+    status: string
   }
   onConfirm: (options: {
     noteId: string
@@ -73,7 +69,6 @@ export function NoteBindingDialog({
   cachedDetail,
   snapshot,
   existingAccount,
-  linkedAuthor,
   onConfirm,
   onCancel,
 }: NoteBindingDialogProps) {
@@ -82,6 +77,8 @@ export function NoteBindingDialog({
   const [error, setError] = useState('')
 
   const baseInfo = noteDetail.baseInfo
+  const isActiveAccount = existingAccount?.status === 'active'
+  const isPendingAccount = existingAccount?.status === 'pending'
 
   // 获取笔记标题
   const noteTitle = baseInfo?.title || ''
@@ -173,12 +170,12 @@ export function NoteBindingDialog({
               </div>
             </div>
 
-            {existingAccount ? (
+            {isActiveAccount ? (
               <Badge variant="default" className="gap-1">
                 <CheckCircle className="h-3 w-3" />
                 已有账号
               </Badge>
-            ) : linkedAuthor || authorAdded ? (
+            ) : isPendingAccount || authorAdded ? (
               <Badge variant="secondary" className="gap-1">
                 <CheckCircle className="h-3 w-3" />
                 已关联
@@ -232,7 +229,7 @@ export function NoteBindingDialog({
           </div>
 
           {/* 提示信息 */}
-          {baseInfo?.author && !existingAccount && !linkedAuthor && !authorAdded && (
+          {baseInfo?.author && !existingAccount && !authorAdded && (
             <div className="flex gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
               <AlertCircle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
               <p className="text-amber-700">
@@ -255,7 +252,7 @@ export function NoteBindingDialog({
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={baseInfo?.author && !existingAccount && !linkedAuthor && !authorAdded}
+            disabled={baseInfo?.author && !existingAccount && !authorAdded}
           >
             确认绑定
           </Button>

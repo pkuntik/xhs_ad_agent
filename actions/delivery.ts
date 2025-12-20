@@ -3,12 +3,19 @@
 import { ObjectId, type Db } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { campaignApi, reportApi } from '@/lib/xhs'
-import type { XhsAccount } from '@/types/account'
+import type { XhsAccount, AccountThresholds } from '@/types/account'
 import type { Work } from '@/types/work'
 import type { Campaign } from '@/types/campaign'
 import type { DeliveryLog, DeliveryDecision } from '@/types/delivery-log'
 import { getCurrentUserId } from '@/lib/auth/session'
 import { deductBalance } from '@/lib/billing/service'
+
+// 默认阈值配置
+const DEFAULT_THRESHOLDS: AccountThresholds = {
+  minConsumption: 100,
+  maxCostPerLead: 50,
+  maxFailRetries: 3,
+}
 
 /**
  * 创建投放（发作品 -> 投放2000元）
@@ -70,9 +77,16 @@ export async function startDelivery(
       return { success: false, error: '账号状态异常' }
     }
 
+    if (!account.cookie) {
+      return { success: false, error: '账号 Cookie 未设置' }
+    }
+    if (!account.advertiserId) {
+      return { success: false, error: '账号广告主 ID 未设置' }
+    }
+
     const cookie = account.cookie
     const budget = options?.budget ?? 2000
-    const bidAmount = options?.bidAmount ?? account.defaultBidAmount
+    const bidAmount = options?.bidAmount ?? account.defaultBidAmount ?? 30
 
     // 调用小红书 API 创建投放计划
     let xhsResult: { campaignId: string; unitId: string }
@@ -130,7 +144,7 @@ export async function startDelivery(
       status: 'pending',
       priority: 2,
       scheduledAt: new Date(Date.now() + 30 * 60 * 1000),
-      params: { minConsumption: account.thresholds.minConsumption },
+      params: { minConsumption: (account.thresholds ?? DEFAULT_THRESHOLDS).minConsumption },
       retryCount: 0,
       maxRetries: 3,
       createdAt: new Date(),
@@ -170,6 +184,9 @@ export async function checkAndDecide(
   if (!account) {
     throw new Error('账号不存在')
   }
+  if (!account.cookie || !account.advertiserId) {
+    throw new Error('账号未完成配置')
+  }
 
   const work = await db
     .collection<Work>(COLLECTIONS.WORKS)
@@ -179,6 +196,7 @@ export async function checkAndDecide(
   }
 
   const cookie = account.cookie
+  const advertiserId = account.advertiserId
 
   // 获取投放数据报表
   let reportData = {
@@ -193,7 +211,7 @@ export async function checkAndDecide(
   try {
     reportData = await reportApi.getReportData({
       cookie,
-      advertiserId: account.advertiserId,
+      advertiserId,
       campaignId: campaign.campaignId,
       startDate: campaign.batchStartAt,
       endDate: new Date(),
@@ -207,7 +225,7 @@ export async function checkAndDecide(
   const costPerLead =
     reportData.leads > 0 ? reportData.spent / reportData.leads : Infinity
 
-  const isEffective = costPerLead <= account.thresholds.maxCostPerLead
+  const isEffective = costPerLead <= (account.thresholds ?? DEFAULT_THRESHOLDS).maxCostPerLead
 
   // 记录投放日志
   const logEntry: Omit<DeliveryLog, '_id'> = {
@@ -230,7 +248,7 @@ export async function checkAndDecide(
   }
 
   // 消耗未达到阈值，继续监控
-  if (reportData.spent < account.thresholds.minConsumption) {
+  if (reportData.spent < (account.thresholds ?? DEFAULT_THRESHOLDS).minConsumption) {
     logEntry.decision = 'continue'
     logEntry.decisionReason = '消耗未达到检查阈值，继续监控'
 
@@ -243,7 +261,7 @@ export async function checkAndDecide(
   // 效果好，继续投放
   if (isEffective) {
     logEntry.decision = 'continue'
-    logEntry.decisionReason = `效果达标（成本 ${costPerLead.toFixed(2)} <= ${account.thresholds.maxCostPerLead}），继续投放`
+    logEntry.decisionReason = `效果达标（成本 ${costPerLead.toFixed(2)} <= ${(account.thresholds ?? DEFAULT_THRESHOLDS).maxCostPerLead}），继续投放`
 
     await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
     await scheduleNextCheck(db, campaignId, 60)
@@ -266,7 +284,7 @@ export async function checkAndDecide(
   )
 
   // 多次效果不好，换作品重发
-  if (consecutiveFailures >= account.thresholds.maxFailRetries) {
+  if (consecutiveFailures >= (account.thresholds ?? DEFAULT_THRESHOLDS).maxFailRetries) {
     logEntry.decision = 'switch_work'
     logEntry.decisionReason = `连续 ${consecutiveFailures} 次效果不佳，需要换作品`
 
@@ -309,7 +327,7 @@ export async function checkAndDecide(
 
   // 暂停当前计划，准备重新投放
   logEntry.decision = 'restart'
-  logEntry.decisionReason = `效果不佳（成本 ${costPerLead.toFixed(2)} > ${account.thresholds.maxCostPerLead}），断掉重投`
+  logEntry.decisionReason = `效果不佳（成本 ${costPerLead.toFixed(2)} > ${(account.thresholds ?? DEFAULT_THRESHOLDS).maxCostPerLead}），断掉重投`
 
   await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
 
@@ -389,6 +407,9 @@ export async function pauseDelivery(
     if (!account) {
       return { success: false, error: '账号不存在' }
     }
+    if (!account.cookie) {
+      return { success: false, error: '账号 Cookie 未设置' }
+    }
 
     const cookie = account.cookie
 
@@ -431,6 +452,9 @@ export async function resumeDelivery(
       .findOne({ _id: campaign.accountId })
     if (!account) {
       return { success: false, error: '账号不存在' }
+    }
+    if (!account.cookie) {
+      return { success: false, error: '账号 Cookie 未设置' }
     }
 
     const cookie = account.cookie
@@ -579,6 +603,12 @@ export async function startManagedDelivery(
     if (account.status !== 'active') {
       return { success: false, error: '账号状态异常' }
     }
+    if (!account.cookie) {
+      return { success: false, error: '账号 Cookie 未设置' }
+    }
+    if (!account.advertiserId) {
+      return { success: false, error: '账号广告主 ID 未设置' }
+    }
 
     // 扣费
     const deductResult = await deductBalance(userId, 'xhs_api_call', {
@@ -593,6 +623,7 @@ export async function startManagedDelivery(
 
     const config = publication.deliveryConfig || DEFAULT_DELIVERY_CONFIG
     const stats = publication.deliveryStats || INITIAL_DELIVERY_STATS
+    const bidAmount = account.defaultBidAmount ?? 30
 
     // 调用小红书 API 创建投放计划
     let xhsResult: { campaignId: string; unitId: string }
@@ -602,7 +633,7 @@ export async function startManagedDelivery(
         advertiserId: account.advertiserId,
         noteId: publication.noteId,
         budget: config.budget,
-        bidAmount: account.defaultBidAmount,
+        bidAmount,
         objective: 'lead_collection',
       })
     } catch (apiError) {
@@ -622,7 +653,7 @@ export async function startManagedDelivery(
       name: `托管投放 - ${publication.noteDetail?.title || publication.noteId}`,
       objective: 'lead_collection',
       budget: config.budget,
-      bidAmount: account.defaultBidAmount,
+      bidAmount,
       targeting: {},
       status: 'active',
       currentBatch: stats.currentAttempt + 1,
@@ -714,7 +745,7 @@ export async function stopManagedDelivery(
           .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
           .findOne({ _id: campaign.accountId })
 
-        if (account) {
+        if (account && account.cookie) {
           try {
             await campaignApi.pauseCampaign({
               cookie: account.cookie,

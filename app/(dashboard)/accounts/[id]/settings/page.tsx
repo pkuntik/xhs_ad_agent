@@ -50,11 +50,11 @@ export default function AccountSettingsPage({ params }: SettingsPageProps) {
     if (data) {
       setAccount(data)
       setName(data.name)
-      setDailyBudget(data.dailyBudget)
-      setDefaultBidAmount(data.defaultBidAmount)
-      setMinConsumption(data.thresholds.minConsumption)
-      setMaxCostPerLead(data.thresholds.maxCostPerLead)
-      setMaxFailRetries(data.thresholds.maxFailRetries)
+      setDailyBudget(data.dailyBudget ?? 5000)
+      setDefaultBidAmount(data.defaultBidAmount ?? 30)
+      setMinConsumption(data.thresholds?.minConsumption ?? 100)
+      setMaxCostPerLead(data.thresholds?.maxCostPerLead ?? 50)
+      setMaxFailRetries(data.thresholds?.maxFailRetries ?? 3)
     }
     setLoading(false)
   }
@@ -287,8 +287,16 @@ export default function AccountSettingsPage({ params }: SettingsPageProps) {
           <CardDescription>
             当 Cookie 过期时，重新登录聚光平台更新凭证
             {account.loginType === 'password' && account.loginEmail && (
-              <span className="block mt-1 text-green-600">
-                当前使用账号密码登录: {account.loginEmail}
+              <span className="block mt-2 text-sm text-green-600">
+                当前使用账号密码登录:
+                <br />
+                邮箱: {account.loginEmail}
+                {account.loginPassword && (
+                  <>
+                    <br />
+                    密码: {account.loginPassword}
+                  </>
+                )}
               </span>
             )}
           </CardDescription>
@@ -304,6 +312,7 @@ export default function AccountSettingsPage({ params }: SettingsPageProps) {
               defaultLoginType={account.loginType === 'password' ? 'password' : 'cookie'}
               isUpdateMode
               initialEmail={account.loginEmail}
+              initialPassword={account.loginPassword}
               onSuccess={handleUpdateCredentials}
               showCancel={false}
             />

@@ -16,6 +16,7 @@ interface AccountDetailPageProps {
 }
 
 const statusMap = {
+  pending: { label: '待完善', variant: 'outline' as const },
   active: { label: '正常', variant: 'success' as const },
   inactive: { label: '已停用', variant: 'secondary' as const },
   suspended: { label: '已暂停', variant: 'warning' as const },
@@ -55,14 +56,14 @@ export default async function AccountDetailPage({ params }: AccountDetailPagePro
               <Badge variant={status.variant}>{status.label}</Badge>
             </div>
             <p className="text-muted-foreground">
-              最后同步: {formatDateTime(account.lastSyncAt)}
+              最后同步: {account.lastSyncAt ? formatDateTime(account.lastSyncAt) : '从未同步'}
             </p>
           </div>
         </div>
         <div className="flex items-center space-x-3">
           <AutoManageToggle
             accountId={account._id.toString()}
-            initialEnabled={account.autoManaged}
+            initialEnabled={account.autoManaged ?? false}
           />
           <Link href={`/accounts/${id}/settings`}>
             <Button variant="outline">
