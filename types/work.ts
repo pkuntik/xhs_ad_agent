@@ -2,6 +2,29 @@ import { ObjectId } from 'mongodb'
 import type { GenerationResult } from './creation'
 import type { CachedNoteDetail, NoteSnapshot, SyncLogEntry } from './note'
 
+// 托管投放配置
+export interface DeliveryConfig {
+  enabled: boolean              // 托管开关
+  budget: number                // 单次预算（默认 2000）
+  checkThreshold1: number       // 第一检查点消耗阈值（默认 60）
+  checkThreshold2: number       // 第二检查点消耗阈值（默认 120）
+  maxRetries: number            // 最大重试次数（默认 3）
+}
+
+// 托管投放状态
+export type DeliveryStatus = 'idle' | 'running' | 'paused' | 'stopped'
+
+// 投放统计
+export interface DeliveryStats {
+  totalAttempts: number         // 总投放次数
+  successfulAttempts: number    // 成功次数（有加粉）
+  totalSpent: number            // 总消耗
+  avgSpentPerAttempt: number    // 平均每次消耗
+  successRate: number           // 起量概率
+  currentAttempt: number        // 当前投放批次（用于重试计数）
+  lastAttemptAt?: Date          // 最后投放时间
+}
+
 // 作品状态
 export type WorkStatus = 'unused' | 'scanned' | 'published' | 'promoting' | 'paused' | 'archived'
 
@@ -92,4 +115,10 @@ export interface Publication {
   // 同步时间
   lastSyncAt?: Date               // 上次同步时间
   nextSyncAt?: Date               // 下次计划同步时间
+
+  // 托管投放
+  deliveryConfig?: DeliveryConfig // 托管配置
+  deliveryStats?: DeliveryStats   // 投放统计
+  deliveryStatus?: DeliveryStatus // 投放状态
+  currentCampaignId?: string      // 当前投放计划 ID
 }

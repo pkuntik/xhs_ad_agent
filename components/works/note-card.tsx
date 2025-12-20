@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import {
   Dialog,
   DialogContent,
@@ -31,10 +32,18 @@ import {
   Play,
   Clock,
   Zap,
+  Settings,
+  UserPlus,
+  Rocket,
+  PauseCircle,
+  StopCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { syncNoteData, deletePublication } from '@/actions/note'
+import { markFollowerAdded } from '@/actions/delivery'
 import { SyncLogDialog } from '@/components/works/sync-log-dialog'
+import { DeliveryConfigDialog } from '@/components/works/delivery-config-dialog'
+import { DeliveryStopDialog } from '@/components/works/delivery-stop-dialog'
 import type { Publication } from '@/types/work'
 
 interface NoteCardProps {
@@ -85,6 +94,9 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
   const [deleting, setDeleting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showLogDialog, setShowLogDialog] = useState(false)
+  const [showConfigDialog, setShowConfigDialog] = useState(false)
+  const [showStopDialog, setShowStopDialog] = useState(false)
+  const [markingFollower, setMarkingFollower] = useState(false)
   const [error, setError] = useState('')
 
   const detail = publication.noteDetail
@@ -92,6 +104,13 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
   const syncLogs = publication.syncLogs || []
   const latestSnapshot = snapshots[snapshots.length - 1]
   const previousSnapshot = snapshots.length > 1 ? snapshots[snapshots.length - 2] : null
+
+  // 托管投放状态
+  const deliveryConfig = publication.deliveryConfig
+  const deliveryStats = publication.deliveryStats
+  const deliveryStatus = publication.deliveryStatus || 'idle'
+  const isDeliveryEnabled = deliveryConfig?.enabled || false
+  const isDeliveryRunning = deliveryStatus === 'running'
 
   async function handleSync() {
     setSyncing(true)
@@ -130,6 +149,35 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
       toast.error('删除失败')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleMarkFollower() {
+    setMarkingFollower(true)
+
+    try {
+      const result = await markFollowerAdded(workId, index)
+      if (result.success) {
+        toast.success('已标记加粉成功')
+        onRefresh?.()
+      } else {
+        toast.error(result.error || '标记失败')
+      }
+    } catch {
+      toast.error('标记失败')
+    } finally {
+      setMarkingFollower(false)
+    }
+  }
+
+  // 托管投放开关处理
+  function handleDeliveryToggle() {
+    if (isDeliveryRunning) {
+      // 正在运行，显示停止确认对话框
+      setShowStopDialog(true)
+    } else {
+      // 未运行，显示配置对话框
+      setShowConfigDialog(true)
     }
   }
 
@@ -414,6 +462,91 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
           </div>
         )}
 
+        {/* 托管投放区域 */}
+        <div className="border-t bg-gradient-to-r from-purple-50/50 to-blue-50/50 px-4 py-3">
+          <div className="flex items-center justify-between">
+            {/* 左侧：状态和开关 */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={isDeliveryRunning}
+                  onCheckedChange={handleDeliveryToggle}
+                  className="data-[state=checked]:bg-purple-600"
+                />
+                <span className="text-sm font-medium">托管投放</span>
+              </div>
+              {/* 状态徽章 */}
+              {deliveryStatus === 'running' && (
+                <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100">
+                  <Rocket className="h-3 w-3 mr-1" />
+                  投放中
+                </Badge>
+              )}
+              {deliveryStatus === 'paused' && (
+                <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+                  <PauseCircle className="h-3 w-3 mr-1" />
+                  已暂停
+                </Badge>
+              )}
+              {deliveryStatus === 'stopped' && (
+                <Badge variant="secondary" className="bg-gray-100 text-gray-700">
+                  <StopCircle className="h-3 w-3 mr-1" />
+                  已停止
+                </Badge>
+              )}
+            </div>
+
+            {/* 右侧：操作按钮 */}
+            <div className="flex items-center gap-2">
+              {isDeliveryRunning && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleMarkFollower}
+                  disabled={markingFollower}
+                  className="text-green-600 border-green-200 hover:bg-green-50"
+                >
+                  {markingFollower ? (
+                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                  ) : (
+                    <UserPlus className="h-3 w-3 mr-1" />
+                  )}
+                  标记加粉
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowConfigDialog(true)}
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* 投放统计 */}
+          {deliveryStats && deliveryStats.totalAttempts > 0 && (
+            <div className="mt-2 pt-2 border-t border-purple-100 grid grid-cols-4 gap-4 text-xs">
+              <div>
+                <span className="text-muted-foreground">投放次数</span>
+                <p className="font-medium">{deliveryStats.totalAttempts} 次</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">成功次数</span>
+                <p className="font-medium text-green-600">{deliveryStats.successfulAttempts} 次</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">平均消耗</span>
+                <p className="font-medium">{deliveryStats.avgSpentPerAttempt.toFixed(0)} 元</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">起量概率</span>
+                <p className="font-medium text-purple-600">{deliveryStats.successRate.toFixed(1)}%</p>
+              </div>
+            </div>
+          )}
+        </div>
+
         {error && (
           <div className="border-t px-4 py-2 bg-red-50">
             <p className="text-xs text-red-500">{error}</p>
@@ -448,6 +581,27 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
         onOpenChange={setShowLogDialog}
         logs={syncLogs}
         noteTitle={detail.title}
+      />
+
+      {/* 托管配置对话框 */}
+      <DeliveryConfigDialog
+        open={showConfigDialog}
+        onOpenChange={setShowConfigDialog}
+        workId={workId}
+        publicationIndex={index}
+        currentConfig={deliveryConfig}
+        noteTitle={detail.title}
+        onSaved={onRefresh}
+      />
+
+      {/* 停止托管对话框 */}
+      <DeliveryStopDialog
+        open={showStopDialog}
+        onOpenChange={setShowStopDialog}
+        workId={workId}
+        publicationIndex={index}
+        noteTitle={detail.title}
+        onStopped={onRefresh}
       />
     </Card>
   )

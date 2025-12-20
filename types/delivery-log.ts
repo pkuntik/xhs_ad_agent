@@ -3,12 +3,18 @@ import { ObjectId } from 'mongodb'
 // 决策类型
 export type DeliveryDecision = 'continue' | 'pause' | 'restart' | 'switch_work'
 
+// 检查阶段
+export type CheckStage = 1 | 2  // 1: 检查咨询量(threshold1), 2: 检查加粉(threshold2)
+
 // 投放记录
 export interface DeliveryLog {
   _id: ObjectId
   accountId: ObjectId
   workId: ObjectId
   campaignId: ObjectId
+
+  // Publication 信息（用于托管投放）
+  publicationIndex?: number     // 对应 Work.publications 的索引
 
   // 时间区间
   periodStart: Date
@@ -24,6 +30,13 @@ export interface DeliveryLog {
   leads: number                   // 私信咨询数
   costPerLead: number             // 单次咨询成本
   conversionRate: number          // 转化率
+
+  // 加粉数据（托管投放专用）
+  followers?: number              // 加粉数
+  hasFollower?: boolean           // 是否有加粉
+
+  // 检查阶段（托管投放专用）
+  checkStage?: CheckStage         // 检查阶段
 
   // 效果判定
   isEffective: boolean            // 是否有效

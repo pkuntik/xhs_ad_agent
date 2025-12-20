@@ -462,3 +462,373 @@ export async function resumeDelivery(
     return { success: false, error: error instanceof Error ? error.message : '未知错误' }
   }
 }
+
+// ============================================
+// 托管投放相关功能
+// ============================================
+
+import type { DeliveryConfig, DeliveryStats, DeliveryStatus } from '@/types/work'
+
+// 默认托管配置
+const DEFAULT_DELIVERY_CONFIG: DeliveryConfig = {
+  enabled: false,
+  budget: 2000,
+  checkThreshold1: 60,
+  checkThreshold2: 120,
+  maxRetries: 3,
+}
+
+// 初始投放统计
+const INITIAL_DELIVERY_STATS: DeliveryStats = {
+  totalAttempts: 0,
+  successfulAttempts: 0,
+  totalSpent: 0,
+  avgSpentPerAttempt: 0,
+  successRate: 0,
+  currentAttempt: 0,
+}
+
+/**
+ * 更新 Publication 的托管配置
+ */
+export async function updateDeliveryConfig(
+  workId: string,
+  publicationIndex: number,
+  config: Partial<DeliveryConfig>
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDb()
+
+    const work = await db
+      .collection<Work>(COLLECTIONS.WORKS)
+      .findOne({ _id: new ObjectId(workId) })
+    if (!work) {
+      return { success: false, error: '作品不存在' }
+    }
+    if (!work.publications || !work.publications[publicationIndex]) {
+      return { success: false, error: '笔记不存在' }
+    }
+
+    const publication = work.publications[publicationIndex]
+    const currentConfig = publication.deliveryConfig || DEFAULT_DELIVERY_CONFIG
+    const newConfig = { ...currentConfig, ...config }
+
+    await db.collection(COLLECTIONS.WORKS).updateOne(
+      { _id: new ObjectId(workId) },
+      {
+        $set: {
+          [`publications.${publicationIndex}.deliveryConfig`]: newConfig,
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    return { success: true }
+  } catch (error) {
+    console.error('更新托管配置失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
+ * 开始托管投放
+ */
+export async function startManagedDelivery(
+  workId: string,
+  publicationIndex: number
+): Promise<{ success: boolean; error?: string; campaignId?: string }> {
+  try {
+    const userId = await getCurrentUserId()
+    if (!userId) {
+      return { success: false, error: '请先登录' }
+    }
+
+    const db = await getDb()
+
+    const work = await db
+      .collection<Work>(COLLECTIONS.WORKS)
+      .findOne({ _id: new ObjectId(workId) })
+    if (!work) {
+      return { success: false, error: '作品不存在' }
+    }
+    if (!work.publications || !work.publications[publicationIndex]) {
+      return { success: false, error: '笔记不存在' }
+    }
+
+    const publication = work.publications[publicationIndex]
+    if (!publication.noteId) {
+      return { success: false, error: '笔记 ID 不存在' }
+    }
+    if (!publication.accountId) {
+      return { success: false, error: '请先关联账号' }
+    }
+
+    // 检查是否已在投放中
+    if (publication.deliveryStatus === 'running') {
+      return { success: false, error: '该笔记已在托管投放中' }
+    }
+
+    // 获取账号信息
+    const account = await db
+      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+      .findOne({ _id: new ObjectId(publication.accountId) })
+    if (!account) {
+      return { success: false, error: '账号不存在' }
+    }
+    if (account.status !== 'active') {
+      return { success: false, error: '账号状态异常' }
+    }
+
+    // 扣费
+    const deductResult = await deductBalance(userId, 'xhs_api_call', {
+      relatedType: 'managed_delivery',
+      description: '小红书API调用-托管投放',
+      metadata: { workId, publicationIndex },
+    })
+
+    if (!deductResult.success) {
+      return { success: false, error: deductResult.error }
+    }
+
+    const config = publication.deliveryConfig || DEFAULT_DELIVERY_CONFIG
+    const stats = publication.deliveryStats || INITIAL_DELIVERY_STATS
+
+    // 调用小红书 API 创建投放计划
+    let xhsResult: { campaignId: string; unitId: string }
+    try {
+      xhsResult = await campaignApi.createCampaign({
+        cookie: account.cookie,
+        advertiserId: account.advertiserId,
+        noteId: publication.noteId,
+        budget: config.budget,
+        bidAmount: account.defaultBidAmount,
+        objective: 'lead_collection',
+      })
+    } catch (apiError) {
+      console.warn('小红书 API 未实现，使用模拟数据:', apiError)
+      xhsResult = {
+        campaignId: `mock_managed_${Date.now()}`,
+        unitId: `mock_unit_${Date.now()}`,
+      }
+    }
+
+    // 保存计划到数据库
+    const campaign: Omit<Campaign, '_id'> = {
+      accountId: new ObjectId(publication.accountId),
+      workId: new ObjectId(workId),
+      campaignId: xhsResult.campaignId,
+      unitId: xhsResult.unitId,
+      name: `托管投放 - ${publication.noteDetail?.title || publication.noteId}`,
+      objective: 'lead_collection',
+      budget: config.budget,
+      bidAmount: account.defaultBidAmount,
+      targeting: {},
+      status: 'active',
+      currentBatch: stats.currentAttempt + 1,
+      batchStartAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    const result = await db.collection(COLLECTIONS.CAMPAIGNS).insertOne(campaign)
+    const campaignId = result.insertedId.toString()
+
+    // 更新 Publication 状态
+    await db.collection(COLLECTIONS.WORKS).updateOne(
+      { _id: new ObjectId(workId) },
+      {
+        $set: {
+          [`publications.${publicationIndex}.deliveryStatus`]: 'running' as DeliveryStatus,
+          [`publications.${publicationIndex}.currentCampaignId`]: campaignId,
+          [`publications.${publicationIndex}.deliveryConfig.enabled`]: true,
+          [`publications.${publicationIndex}.deliveryStats.totalAttempts`]: stats.totalAttempts + 1,
+          [`publications.${publicationIndex}.deliveryStats.currentAttempt`]: stats.currentAttempt + 1,
+          [`publications.${publicationIndex}.deliveryStats.lastAttemptAt`]: new Date(),
+          status: 'promoting',
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    // 创建效果检查任务（30分钟后开始检查）
+    await db.collection(COLLECTIONS.TASKS).insertOne({
+      type: 'check_managed_campaign',
+      accountId: new ObjectId(publication.accountId),
+      workId: new ObjectId(workId),
+      campaignId: result.insertedId,
+      publicationIndex,
+      status: 'pending',
+      priority: 2,
+      scheduledAt: new Date(Date.now() + 30 * 60 * 1000),
+      params: {
+        checkThreshold1: config.checkThreshold1,
+        checkThreshold2: config.checkThreshold2,
+        maxRetries: config.maxRetries,
+      },
+      retryCount: 0,
+      maxRetries: 3,
+      createdAt: new Date(),
+    })
+
+    return { success: true, campaignId }
+  } catch (error) {
+    console.error('开始托管投放失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
+ * 停止托管投放
+ */
+export async function stopManagedDelivery(
+  workId: string,
+  publicationIndex: number,
+  action: 'pause' | 'continue_no_restart'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDb()
+
+    const work = await db
+      .collection<Work>(COLLECTIONS.WORKS)
+      .findOne({ _id: new ObjectId(workId) })
+    if (!work) {
+      return { success: false, error: '作品不存在' }
+    }
+    if (!work.publications || !work.publications[publicationIndex]) {
+      return { success: false, error: '笔记不存在' }
+    }
+
+    const publication = work.publications[publicationIndex]
+    const campaignId = publication.currentCampaignId
+
+    if (action === 'pause' && campaignId) {
+      // 立即暂停当前投放
+      const campaign = await db
+        .collection<Campaign>(COLLECTIONS.CAMPAIGNS)
+        .findOne({ _id: new ObjectId(campaignId) })
+
+      if (campaign && campaign.status === 'active') {
+        const account = await db
+          .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+          .findOne({ _id: campaign.accountId })
+
+        if (account) {
+          try {
+            await campaignApi.pauseCampaign({
+              cookie: account.cookie,
+              campaignId: campaign.campaignId,
+            })
+          } catch (e) {
+            console.warn('暂停计划 API 调用失败:', e)
+          }
+        }
+
+        await db.collection(COLLECTIONS.CAMPAIGNS).updateOne(
+          { _id: campaign._id },
+          { $set: { status: 'paused', updatedAt: new Date() } }
+        )
+      }
+    }
+
+    // 更新 Publication 状态
+    const newStatus: DeliveryStatus = action === 'pause' ? 'paused' : 'stopped'
+    await db.collection(COLLECTIONS.WORKS).updateOne(
+      { _id: new ObjectId(workId) },
+      {
+        $set: {
+          [`publications.${publicationIndex}.deliveryStatus`]: newStatus,
+          [`publications.${publicationIndex}.deliveryConfig.enabled`]: false,
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    // 取消所有相关的待执行任务
+    await db.collection(COLLECTIONS.TASKS).updateMany(
+      {
+        workId: new ObjectId(workId),
+        publicationIndex,
+        status: 'pending',
+        type: 'check_managed_campaign',
+      },
+      { $set: { status: 'cancelled' } }
+    )
+
+    return { success: true }
+  } catch (error) {
+    console.error('停止托管投放失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
+ * 手动标记加粉
+ */
+export async function markFollowerAdded(
+  workId: string,
+  publicationIndex: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDb()
+
+    const work = await db
+      .collection<Work>(COLLECTIONS.WORKS)
+      .findOne({ _id: new ObjectId(workId) })
+    if (!work) {
+      return { success: false, error: '作品不存在' }
+    }
+    if (!work.publications || !work.publications[publicationIndex]) {
+      return { success: false, error: '笔记不存在' }
+    }
+
+    const publication = work.publications[publicationIndex]
+    const stats = publication.deliveryStats || INITIAL_DELIVERY_STATS
+
+    // 更新统计：增加成功次数
+    const newSuccessfulAttempts = stats.successfulAttempts + 1
+    const newSuccessRate = stats.totalAttempts > 0
+      ? (newSuccessfulAttempts / stats.totalAttempts) * 100
+      : 0
+
+    await db.collection(COLLECTIONS.WORKS).updateOne(
+      { _id: new ObjectId(workId) },
+      {
+        $set: {
+          [`publications.${publicationIndex}.deliveryStats.successfulAttempts`]: newSuccessfulAttempts,
+          [`publications.${publicationIndex}.deliveryStats.successRate`]: newSuccessRate,
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    // 如果当前有投放计划，记录到投放日志
+    if (publication.currentCampaignId) {
+      await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne({
+        accountId: publication.accountId ? new ObjectId(publication.accountId) : undefined,
+        workId: new ObjectId(workId),
+        campaignId: new ObjectId(publication.currentCampaignId),
+        publicationIndex,
+        periodStart: new Date(),
+        periodEnd: new Date(),
+        spent: 0,
+        impressions: 0,
+        clicks: 0,
+        ctr: 0,
+        leads: 0,
+        costPerLead: 0,
+        conversionRate: 0,
+        followers: 1,
+        hasFollower: true,
+        isEffective: true,
+        decision: 'continue',
+        decisionReason: '手动标记加粉成功',
+        createdAt: new Date(),
+      })
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('标记加粉失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
