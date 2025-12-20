@@ -1,12 +1,13 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Settings, FileText, Megaphone } from 'lucide-react'
+import { ArrowLeft, Settings, FileText, Megaphone, ShoppingCart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AutoManageToggle } from '@/components/accounts/auto-manage-toggle'
 import { RemoteNotesList } from '@/components/accounts/remote-notes-list'
+import { OrdersList } from '@/components/accounts/orders-list'
 import { PublishNoteButton } from '@/components/accounts/publish-note-button'
 import { getAccountById, getAccountStats } from '@/actions/account'
 import { getCampaigns } from '@/actions/campaign'
@@ -126,6 +127,10 @@ export default async function AccountDetailPage({ params }: AccountDetailPagePro
             <FileText className="mr-2 h-4 w-4" />
             笔记
           </TabsTrigger>
+          <TabsTrigger value="orders">
+            <ShoppingCart className="mr-2 h-4 w-4" />
+            订单
+          </TabsTrigger>
           <TabsTrigger value="campaigns">
             <Megaphone className="mr-2 h-4 w-4" />
             投放计划
@@ -134,6 +139,10 @@ export default async function AccountDetailPage({ params }: AccountDetailPagePro
 
         <TabsContent value="works" className="mt-4">
           <RemoteNotesList accountId={id} />
+        </TabsContent>
+
+        <TabsContent value="orders" className="mt-4">
+          <OrdersList accountId={id} />
         </TabsContent>
 
         <TabsContent value="campaigns" className="mt-4">

@@ -52,4 +52,6 @@ export const COLLECTIONS = {
   SETTINGS: 'settings',
   // 远程笔记（从聚光平台同步）
   REMOTE_NOTES: 'remote_notes',
+  // 订单（从聚光平台同步）
+  ORDERS: 'orders',
 } as const

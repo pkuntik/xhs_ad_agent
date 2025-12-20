@@ -52,6 +52,7 @@ export interface XhsAccount {
   advertiserId?: string           // 广告主 ID
   sellerId?: string               // 卖家 ID
   balance?: number                // 账户余额
+  redcoin?: number                // 薯币余额（薯条钱包）
 
   // 账号详情
   subAccount?: boolean            // 是否子账号

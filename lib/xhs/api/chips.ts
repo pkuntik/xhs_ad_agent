@@ -1,6 +1,20 @@
 import { xhsRequest } from '../client'
+import type { ChipsOrderItem, QueryOrdersParams, QueryOrdersResponse } from '@/types/order'
 
 // ============ 类型定义 ============
+
+// 薯币钱包余额响应
+export interface ChipsWalletBalance {
+  redcoin: number           // 薯币余额
+  chips_cash: number        // 薯条现金
+  chips_wallet: number      // 薯条钱包
+  chips_wallet_cash: number // 薯条钱包现金
+  chips_wallet_return: number // 薯条钱包返还
+  coupon_info: {
+    valid_count: number
+    summary: unknown[]
+  }
+}
 
 // 笔记列表项（聚光平台返回的格式）
 export interface ChipsNoteItem {
@@ -78,3 +92,57 @@ export async function queryChipsNotes(
     invalid_count: data.invalid_count || 0,
   }
 }
+
+/**
+ * 获取订单列表（聚光平台）
+ * POST /api/edith/chips/order/query
+ */
+export async function queryChipsOrders(
+  cookie: string,
+  params: QueryOrdersParams = {}
+): Promise<QueryOrdersResponse> {
+  const {
+    author_user_id = [],
+    page = 1,
+    page_size = 10,
+  } = params
+
+  const data = await xhsRequest<QueryOrdersResponse>({
+    cookie,
+    method: 'POST',
+    path: '/api/edith/chips/order/query',
+    body: {
+      author_user_id,
+      page,
+      page_size,
+    },
+  })
+
+  return {
+    list: data.list || [],
+    total: data.total || 0,
+  }
+}
+
+/**
+ * 获取薯币钱包余额
+ * GET /api/edith/chips/wallet/balance
+ */
+export async function getChipsWalletBalance(cookie: string): Promise<ChipsWalletBalance> {
+  const data = await xhsRequest<ChipsWalletBalance>({
+    cookie,
+    method: 'GET',
+    path: '/api/edith/chips/wallet/balance',
+  })
+
+  return {
+    redcoin: data.redcoin || 0,
+    chips_cash: data.chips_cash || 0,
+    chips_wallet: data.chips_wallet || 0,
+    chips_wallet_cash: data.chips_wallet_cash || 0,
+    chips_wallet_return: data.chips_wallet_return || 0,
+    coupon_info: data.coupon_info || { valid_count: 0, summary: [] },
+  }
+}
+
+export type { ChipsOrderItem, QueryOrdersParams, QueryOrdersResponse }

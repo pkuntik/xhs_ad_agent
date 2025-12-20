@@ -5,9 +5,10 @@ import { ObjectId } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { validateCookie } from '@/lib/xhs/auth'
 import { loginWithEmailPassword } from '@/lib/xhs/login'
-import { queryChipsNotes } from '@/lib/xhs/api/chips'
+import { queryChipsNotes, queryChipsOrders, getChipsWalletBalance } from '@/lib/xhs/api/chips'
 import type { XhsAccount, AccountListItem, CreateAccountInput, CreateAccountByPasswordInput, AccountThresholds } from '@/types/account'
 import type { RemoteNote, RemoteNoteItem } from '@/types/remote-note'
+import type { Order, OrderListItem, ChipsOrderItem } from '@/types/order'
 import type { User } from '@/types/user'
 import { getCurrentUserId } from '@/lib/auth/session'
 import { deductBalance } from '@/lib/billing/service'
@@ -716,6 +717,7 @@ export interface SyncAccountInfoResult {
   error?: string
   data?: {
     balance: number
+    redcoin?: number
     nickname?: string
     hasAbnormalIssues?: boolean
   }
@@ -758,6 +760,17 @@ export async function syncAccountInfo(accountId: string): Promise<SyncAccountInf
       return { success: false, error: cookieInfo.errorMessage || 'Cookie 已过期' }
     }
 
+    // 获取薯币余额（仅有薯条权限时）
+    let redcoin = 0
+    if (cookieInfo.hasChipsPermission) {
+      try {
+        const walletInfo = await getChipsWalletBalance(account.cookie)
+        redcoin = walletInfo.redcoin
+      } catch (e) {
+        console.warn('获取薯币余额失败:', e)
+      }
+    }
+
     // 更新账号信息
     const now = new Date()
     await db.collection(COLLECTIONS.ACCOUNTS).updateOne(
@@ -767,9 +780,11 @@ export async function syncAccountInfo(accountId: string): Promise<SyncAccountInf
           nickname: cookieInfo.nickname,
           avatar: cookieInfo.avatar,
           balance: cookieInfo.balance || 0,
+          redcoin,
           subAccount: cookieInfo.subAccount,
           roleType: cookieInfo.roleType,
           permissionsCount: cookieInfo.permissionsCount,
+          hasChipsPermission: cookieInfo.hasChipsPermission,
           accountStatusDetail: cookieInfo.accountStatus,
           hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
           status: 'active',
@@ -786,6 +801,7 @@ export async function syncAccountInfo(accountId: string): Promise<SyncAccountInf
       success: true,
       data: {
         balance: cookieInfo.balance || 0,
+        redcoin,
         nickname: cookieInfo.nickname,
         hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
       },
@@ -1014,6 +1030,239 @@ export async function getSyncedNotes(
     return {
       success: false,
       error: error instanceof Error ? error.message : '获取笔记列表失败',
+    }
+  }
+}
+
+// 同步订单结果
+export interface SyncOrdersResult {
+  success: boolean
+  error?: string
+  data?: {
+    synced: number      // 新增的订单数量
+    updated: number     // 更新的订单数量
+    total: number       // 总订单数量
+  }
+}
+
+/**
+ * 同步账号的所有订单（从聚光平台获取并保存到数据库）
+ */
+export async function syncOrders(accountId: string): Promise<SyncOrdersResult> {
+  try {
+    const db = await getDb()
+
+    // 获取账号信息（包含 cookie）
+    const account = await db
+      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+      .findOne({ _id: new ObjectId(accountId) })
+
+    if (!account) {
+      return { success: false, error: '账号不存在' }
+    }
+
+    if (!account.cookie) {
+      return { success: false, error: '账号未配置登录凭证' }
+    }
+
+    if (account.status === 'cookie_expired') {
+      return { success: false, error: 'Cookie 已过期，请重新登录' }
+    }
+
+    const accountObjId = new ObjectId(accountId)
+    const now = new Date()
+    const allOrders: ChipsOrderItem[] = []
+    let page = 1
+    const pageSize = 20
+    let hasMore = true
+
+    // 遍历所有分页获取全部订单
+    while (hasMore) {
+      const result = await queryChipsOrders(account.cookie, {
+        page,
+        page_size: pageSize,
+      })
+
+      if (result.list.length === 0) {
+        hasMore = false
+        break
+      }
+
+      allOrders.push(...result.list)
+
+      // 检查是否还有更多
+      if (page * pageSize >= result.total) {
+        hasMore = false
+      } else {
+        page++
+        // 防止请求过快
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+    }
+
+    // 批量更新或插入到数据库
+    let updated = 0
+    let inserted = 0
+    const ordersCollection = db.collection<Order>(COLLECTIONS.ORDERS)
+
+    for (const order of allOrders) {
+      const existing = await ordersCollection.findOne({
+        accountId: accountObjId,
+        orderNo: order.order_no,
+      })
+
+      const orderDoc: Omit<Order, '_id'> = {
+        accountId: accountObjId,
+        orderNo: order.order_no,
+        state: order.state,
+        stateDesc: order.state_desc,
+        createTime: new Date(order.create_time),
+        planStartTime: new Date(order.plan_start_time),
+        endTime: new Date(order.end_time),
+        totalTime: order.total_time,
+        campaignBudget: order.campaign_budget,
+        actualPay: order.actual_pay,
+        actualRefund: order.actual_refund,
+        consume: order.consume || 0,
+        totalDiscount: order.total_discount,
+        impression: order.impression || 0,
+        read: order.read || 0,
+        likes: order.likes || 0,
+        comments: order.comments || 0,
+        favorite: order.favorite || 0,
+        follow: order.follow || 0,
+        homepageView: order.homepage_view || 0,
+        cpa: order.cpa || 0,
+        convCntMin: order.conv_cnt_min,
+        convCntMax: order.conv_cnt_max,
+        advertiseTarget: order.advertise_target,
+        advertiseTargetDesc: order.advertise_target_desc,
+        smartTarget: order.smart_target,
+        giftMode: order.gift_mode,
+        multiNote: order.multi_note,
+        targetInfo: order.target_info,
+        notes: order.notes,
+        canHeat: order.can_heat,
+        cantHeatDesc: order.cant_heat_desc,
+        payChannel: order.pay_channel,
+        payChannelDesc: order.pay_channel_desc,
+        discountMode: order.discount_mode,
+        discountInfo: order.discount_info,
+        syncedAt: now,
+        updatedAt: now,
+      }
+
+      if (existing) {
+        // 更新现有记录
+        await ordersCollection.updateOne(
+          { _id: existing._id },
+          { $set: orderDoc }
+        )
+        updated++
+      } else {
+        // 插入新记录
+        await ordersCollection.insertOne({
+          _id: new ObjectId(),
+          ...orderDoc,
+        } as Order)
+        inserted++
+      }
+    }
+
+    revalidatePath(`/accounts/${accountId}`)
+
+    return {
+      success: true,
+      data: {
+        synced: inserted,
+        updated,
+        total: allOrders.length,
+      },
+    }
+  } catch (error) {
+    console.error('同步订单失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '同步订单失败',
+    }
+  }
+}
+
+// 获取已同步订单列表结果
+export interface GetSyncedOrdersResult {
+  success: boolean
+  error?: string
+  data?: {
+    list: OrderListItem[]
+    total: number
+  }
+}
+
+/**
+ * 获取账号已同步的订单列表（从数据库）
+ */
+export async function getSyncedOrders(
+  accountId: string,
+  options: { page?: number; pageSize?: number } = {}
+): Promise<GetSyncedOrdersResult> {
+  try {
+    const { page = 1, pageSize = 10 } = options
+    const db = await getDb()
+    const accountObjId = new ObjectId(accountId)
+
+    // 查询订单列表
+    const [orders, total] = await Promise.all([
+      db
+        .collection<Order>(COLLECTIONS.ORDERS)
+        .find({ accountId: accountObjId })
+        .sort({ createTime: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .toArray(),
+      db
+        .collection<Order>(COLLECTIONS.ORDERS)
+        .countDocuments({ accountId: accountObjId }),
+    ])
+
+    // 序列化为客户端格式（金额转为元）
+    const list: OrderListItem[] = orders.map(order => ({
+      _id: order._id.toString(),
+      orderNo: order.orderNo,
+      state: order.state,
+      stateDesc: order.stateDesc,
+      createTime: order.createTime.toISOString(),
+      planStartTime: order.planStartTime.toISOString(),
+      endTime: order.endTime.toISOString(),
+      campaignBudget: order.campaignBudget / 100,
+      actualPay: order.actualPay / 100,
+      actualRefund: order.actualRefund / 100,
+      consume: order.consume / 100,
+      impression: order.impression,
+      read: order.read,
+      likes: order.likes,
+      comments: order.comments,
+      favorite: order.favorite,
+      follow: order.follow,
+      homepageView: order.homepageView,
+      cpa: order.cpa / 100,
+      advertiseTargetDesc: order.advertiseTargetDesc,
+      notes: order.notes,
+      canHeat: order.canHeat,
+      cantHeatDesc: order.cantHeatDesc,
+    }))
+
+    return {
+      success: true,
+      data: {
+        list,
+        total,
+      },
+    }
+  } catch (error) {
+    console.error('获取已同步订单失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '获取订单列表失败',
     }
   }
 }

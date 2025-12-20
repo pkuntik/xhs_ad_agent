@@ -122,7 +122,11 @@ export function AccountCard({ account }: AccountCardProps) {
       const result = await syncAccountInfo(account._id)
       if (result.success && result.data) {
         setLastSyncAt(new Date())
-        toast.success(`同步完成：余额 ¥${result.data.balance.toFixed(2)}`)
+        const messages = [`余额 ¥${result.data.balance.toFixed(2)}`]
+        if (result.data.redcoin) {
+          messages.push(`薯币 ${result.data.redcoin}`)
+        }
+        toast.success(`同步完成：${messages.join('，')}`)
       } else {
         toast.error(result.error || '同步失败')
       }
@@ -253,11 +257,13 @@ export function AccountCard({ account }: AccountCardProps) {
                 </span>
               </div>
 
-              {/* 权限数量 */}
-              {account.permissionsCount !== undefined && account.permissionsCount > 0 && (
+              {/* 薯币余额（仅有薯条权限时显示） */}
+              {account.hasChipsPermission && account.redcoin !== undefined && (
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">权限数量</span>
-                  <span className="text-sm">{account.permissionsCount} 项</span>
+                  <span className="text-sm text-muted-foreground">🍟 薯币余额</span>
+                  <span className="text-sm font-medium text-amber-600">
+                    {account.redcoin.toLocaleString()}
+                  </span>
                 </div>
               )}
 
