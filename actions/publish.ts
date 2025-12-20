@@ -4,6 +4,7 @@ import { ObjectId } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { getUploadPermit, publishNote, downloadImage, type NoteHashTag } from '@/lib/xhs/api/publish'
 import type { XhsAccount } from '@/types/account'
+import type { Work } from '@/types/work'
 
 // 发布笔记输入
 export interface PublishNoteInput {
@@ -12,6 +13,12 @@ export interface PublishNoteInput {
   content: string
   imageUrls: string[]        // 图片 URL 列表
   hashTags?: string[]        // 话题标签名称
+}
+
+// 从作品发布输入
+export interface PublishFromWorkInput {
+  accountId: string
+  workId: string
 }
 
 // 发布结果
@@ -75,7 +82,7 @@ async function uploadSingleImage(
         'Content-Length': imageBuffer.length.toString(),
         'x-cos-security-token': permit.token,
       },
-      body: imageBuffer,
+      body: new Uint8Array(imageBuffer),
     })
 
     if (!response.ok) {
@@ -87,6 +94,66 @@ async function uploadSingleImage(
     return {
       success: false,
       error: error instanceof Error ? error.message : '上传图片失败',
+    }
+  }
+}
+
+/**
+ * 从作品发布笔记到小红书
+ */
+export async function publishFromWork(input: PublishFromWorkInput): Promise<PublishNoteResult> {
+  try {
+    const { accountId, workId } = input
+    const db = await getDb()
+
+    // 获取作品
+    const work = await db
+      .collection<Work>(COLLECTIONS.WORKS)
+      .findOne({ _id: new ObjectId(workId) })
+
+    if (!work) {
+      return { success: false, error: '作品不存在' }
+    }
+
+    // 从作品提取发布内容
+    const title = work.draftContent?.title?.text || work.title || ''
+    const content = work.draftContent?.content?.body || work.content || ''
+
+    // 提取图片 URL
+    const imageUrls: string[] = []
+
+    // 先添加封面图
+    if (work.draftContent?.cover?.imageUrl) {
+      imageUrls.push(work.draftContent.cover.imageUrl)
+    } else if (work.coverUrl) {
+      imageUrls.push(work.coverUrl)
+    }
+
+    // 添加其他图片
+    if (work.draftContent?.images && work.draftContent.images.length > 0) {
+      for (const img of work.draftContent.images) {
+        if (img.imageUrl && !imageUrls.includes(img.imageUrl)) {
+          imageUrls.push(img.imageUrl)
+        }
+      }
+    }
+
+    if (imageUrls.length === 0) {
+      return { success: false, error: '作品没有可发布的图片' }
+    }
+
+    // 调用发布函数
+    return publishNoteToXhs({
+      accountId,
+      title,
+      content,
+      imageUrls,
+    })
+  } catch (error) {
+    console.error('从作品发布失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '发布失败',
     }
   }
 }

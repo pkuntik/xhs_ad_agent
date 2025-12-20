@@ -544,3 +544,25 @@ export async function updateWorkImages(
     return { success: false, error: error instanceof Error ? error.message : '未知错误' }
   }
 }
+
+/**
+ * 获取可发布的作品列表（有完整内容的作品）
+ */
+export async function getPublishableWorks(): Promise<Work[]> {
+  const db = await getDb()
+
+  const works = await db
+    .collection<Work>(COLLECTIONS.WORKS)
+    .find({
+      // 有标题的作品
+      $or: [
+        { 'draftContent.title.text': { $exists: true, $ne: '' } },
+        { title: { $exists: true, $ne: '' } },
+      ],
+    })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .toArray()
+
+  return works.map(serializeWork)
+}

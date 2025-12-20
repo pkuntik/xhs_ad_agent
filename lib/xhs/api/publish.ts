@@ -141,7 +141,7 @@ export async function uploadImageToRos(
         'x-cos-security-token': token,
         'Authorization': `q-sign-algorithm=sha1&q-ak=null&q-sign-time=${now};${expire}&q-key-time=${now};${expire}&q-header-list=content-length&q-url-param-list=&q-signature=placeholder`,
       },
-      body: imageBuffer,
+      body: new Uint8Array(imageBuffer),
     })
 
     if (!response.ok) {

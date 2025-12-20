@@ -5,7 +5,7 @@ import { ObjectId } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { validateCookie } from '@/lib/xhs/auth'
 import { loginWithEmailPassword } from '@/lib/xhs/login'
-import { queryChipsNotes, type ChipsNoteItem, type QueryNotesParams } from '@/lib/xhs/api/chips'
+import { queryChipsNotes } from '@/lib/xhs/api/chips'
 import type { XhsAccount, AccountListItem, CreateAccountInput, CreateAccountByPasswordInput, AccountThresholds } from '@/types/account'
 import type { RemoteNote, RemoteNoteItem } from '@/types/remote-note'
 import type { User } from '@/types/user'
@@ -28,6 +28,7 @@ export interface VerifyCookieResult {
     subAccount?: boolean
     roleType?: number
     permissionsCount?: number
+    hasChipsPermission?: boolean
     accountStatus?: AccountStatusDetail
     hasAbnormalIssues?: boolean
   }
@@ -69,6 +70,7 @@ export async function verifyCookie(cookie: string): Promise<VerifyCookieResult> 
       subAccount: cookieInfo.subAccount,
       roleType: cookieInfo.roleType,
       permissionsCount: cookieInfo.permissionsCount,
+      hasChipsPermission: cookieInfo.hasChipsPermission,
       accountStatus: cookieInfo.accountStatus,
       hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
     }
@@ -708,7 +710,96 @@ export async function createAccountByPassword(
   }
 }
 
-// 同步结果
+// 同步账号信息结果
+export interface SyncAccountInfoResult {
+  success: boolean
+  error?: string
+  data?: {
+    balance: number
+    nickname?: string
+    hasAbnormalIssues?: boolean
+  }
+}
+
+/**
+ * 同步账号信息（从聚光平台刷新余额、状态等）
+ */
+export async function syncAccountInfo(accountId: string): Promise<SyncAccountInfoResult> {
+  try {
+    const db = await getDb()
+
+    // 获取账号信息（包含 cookie）
+    const account = await db
+      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+      .findOne({ _id: new ObjectId(accountId) })
+
+    if (!account) {
+      return { success: false, error: '账号不存在' }
+    }
+
+    if (!account.cookie) {
+      return { success: false, error: '账号未配置登录凭证' }
+    }
+
+    // 验证并获取最新账号信息
+    const cookieInfo = await validateCookie(account.cookie)
+
+    if (!cookieInfo.valid) {
+      // Cookie 已过期，更新状态
+      await db.collection(COLLECTIONS.ACCOUNTS).updateOne(
+        { _id: new ObjectId(accountId) },
+        {
+          $set: {
+            status: 'cookie_expired',
+            updatedAt: new Date(),
+          },
+        }
+      )
+      return { success: false, error: cookieInfo.errorMessage || 'Cookie 已过期' }
+    }
+
+    // 更新账号信息
+    const now = new Date()
+    await db.collection(COLLECTIONS.ACCOUNTS).updateOne(
+      { _id: new ObjectId(accountId) },
+      {
+        $set: {
+          nickname: cookieInfo.nickname,
+          avatar: cookieInfo.avatar,
+          balance: cookieInfo.balance || 0,
+          subAccount: cookieInfo.subAccount,
+          roleType: cookieInfo.roleType,
+          permissionsCount: cookieInfo.permissionsCount,
+          accountStatusDetail: cookieInfo.accountStatus,
+          hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
+          status: 'active',
+          lastSyncAt: now,
+          updatedAt: now,
+        },
+      }
+    )
+
+    revalidatePath('/accounts')
+    revalidatePath(`/accounts/${accountId}`)
+
+    return {
+      success: true,
+      data: {
+        balance: cookieInfo.balance || 0,
+        nickname: cookieInfo.nickname,
+        hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
+      },
+    }
+  } catch (error) {
+    console.error('同步账号信息失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '同步失败',
+    }
+  }
+}
+
+// 同步笔记结果
 export interface SyncNotesResult {
   success: boolean
   error?: string

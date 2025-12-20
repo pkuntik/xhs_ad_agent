@@ -57,6 +57,7 @@ export interface XhsAccount {
   subAccount?: boolean            // 是否子账号
   roleType?: number               // 角色类型
   permissionsCount?: number       // 权限数量
+  hasChipsPermission?: boolean    // 是否有薯条权限
   accountStatusDetail?: AccountStatusDetail  // 账号状态详情
   hasAbnormalIssues?: boolean     // 是否有异常问题
 

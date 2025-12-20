@@ -12,13 +12,14 @@ import {
   User,
   KeyRound,
   Pin,
+  RefreshCw,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AutoManageToggle } from './auto-manage-toggle'
 import { formatMoney } from '@/lib/utils'
-import { toggleAccountPin } from '@/actions/account'
+import { toggleAccountPin, syncAccountInfo } from '@/actions/account'
 import { toast } from 'sonner'
 import type { AccountListItem } from '@/types/account'
 
@@ -64,6 +65,8 @@ function formatTimeAgo(date: Date): string {
 export function AccountCard({ account }: AccountCardProps) {
   const [isPinned, setIsPinned] = useState(account.isPinned ?? false)
   const [pinning, setPinning] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [lastSyncAt, setLastSyncAt] = useState(account.lastSyncAt)
 
   const status = statusMap[account.status] || statusMap.inactive
   const roleLabel = roleTypeMap[account.roleType || 0] || '未知角色'
@@ -110,6 +113,23 @@ export function AccountCard({ account }: AccountCardProps) {
       toast.error('操作失败')
     } finally {
       setPinning(false)
+    }
+  }
+
+  async function handleSync() {
+    setSyncing(true)
+    try {
+      const result = await syncAccountInfo(account._id)
+      if (result.success && result.data) {
+        setLastSyncAt(new Date())
+        toast.success(`同步完成：余额 ¥${result.data.balance.toFixed(2)}`)
+      } else {
+        toast.error(result.error || '同步失败')
+      }
+    } catch {
+      toast.error('同步失败')
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -160,6 +180,12 @@ export function AccountCard({ account }: AccountCardProps) {
               {/* 子账号标记 */}
               {account.subAccount && (
                 <Badge variant="outline" className="text-xs py-0 h-5">子账号</Badge>
+              )}
+              {/* 薯条权限标记 */}
+              {account.hasChipsPermission && (
+                <Badge variant="secondary" className="text-xs py-0 h-5 bg-amber-100 text-amber-700 hover:bg-amber-100">
+                  🍟 薯条
+                </Badge>
               )}
               {/* 认证状态 */}
               <span className={`text-xs flex items-center gap-0.5 ${certStatus.color}`}>
@@ -250,13 +276,13 @@ export function AccountCard({ account }: AccountCardProps) {
               </div>
 
               {/* 最后同步时间 */}
-              {account.lastSyncAt && (
+              {lastSyncAt && (
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
                     最后同步
                   </span>
-                  <span>{formatTimeAgo(account.lastSyncAt)}</span>
+                  <span>{formatTimeAgo(lastSyncAt)}</span>
                 </div>
               )}
 
@@ -267,11 +293,22 @@ export function AccountCard({ account }: AccountCardProps) {
                     accountId={account._id.toString()}
                     initialEnabled={account.autoManaged ?? false}
                   />
-                  <Link href={`/accounts/${account._id}/settings`}>
-                    <Button variant="ghost" size="icon">
-                      <Settings className="h-4 w-4" />
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleSync}
+                      disabled={syncing}
+                      title="同步账号信息"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
                     </Button>
-                  </Link>
+                    <Link href={`/accounts/${account._id}/settings`}>
+                      <Button variant="ghost" size="icon" title="设置">
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
               </div>
             </>

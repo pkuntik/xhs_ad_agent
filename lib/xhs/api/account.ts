@@ -84,6 +84,7 @@ export interface UserInfoFull extends UserInfo {
   roleType: number               // 角色类型
   permissions: string[]          // 权限列表
   permissionsCount: number       // 权限数量
+  hasChipsPermission: boolean    // 是否有薯条权限
   accountStatus: ParsedAccountStatus  // 解析后的账号状态
   hasAbnormalIssues: boolean     // 是否有异常问题
 }
@@ -206,6 +207,8 @@ export async function getUserInfoFull(cookie: string): Promise<UserInfoFull> {
     accountStatus.subjectState !== 200 ||
     accountStatus.promotionQualityState !== 200
 
+  const permissions = raw.permissions ?? []
+
   return {
     userId: raw.userId,
     loginAccount: raw.loginAccount,
@@ -215,8 +218,9 @@ export async function getUserInfoFull(cookie: string): Promise<UserInfoFull> {
     advertiserId: raw.advertiserId,
     subAccount: raw.subAccount ?? false,
     roleType: raw.roleType ?? 0,
-    permissions: raw.permissions ?? [],
-    permissionsCount: raw.permissions?.length ?? 0,
+    permissions,
+    permissionsCount: permissions.length,
+    hasChipsPermission: permissions.includes('Chips'),
     accountStatus,
     hasAbnormalIssues,
   }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import {
   Dialog,
@@ -11,18 +11,16 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
 import {
   Loader2,
-  Plus,
-  X,
-  ImageIcon,
   CheckCircle,
   ExternalLink,
+  ImageIcon,
+  Check,
 } from 'lucide-react'
-import { publishNoteToXhs } from '@/actions/publish'
+import { publishFromWork } from '@/actions/publish'
+import { getPublishableWorks } from '@/actions/work'
+import type { Work } from '@/types/work'
 
 interface PublishNoteDialogProps {
   open: boolean
@@ -35,47 +33,36 @@ export function PublishNoteDialog({
   onOpenChange,
   accountId,
 }: PublishNoteDialogProps) {
-  const [title, setTitle] = useState('')
-  const [content, setContent] = useState('')
-  const [imageUrls, setImageUrls] = useState<string[]>([])
-  const [newImageUrl, setNewImageUrl] = useState('')
+  const [works, setWorks] = useState<Work[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<{ noteId: string; shareLink: string } | null>(null)
 
-  function handleAddImage() {
-    if (!newImageUrl.trim()) return
-
-    // 验证 URL 格式
-    try {
-      new URL(newImageUrl)
-    } catch {
-      setError('请输入有效的图片 URL')
-      return
+  // 加载可发布的作品列表
+  useEffect(() => {
+    if (open) {
+      loadWorks()
     }
+  }, [open])
 
-    if (imageUrls.length >= 9) {
-      setError('最多只能添加 9 张图片')
-      return
-    }
-
-    setImageUrls([...imageUrls, newImageUrl.trim()])
-    setNewImageUrl('')
+  async function loadWorks() {
+    setLoading(true)
     setError('')
-  }
-
-  function handleRemoveImage(index: number) {
-    setImageUrls(imageUrls.filter((_, i) => i !== index))
+    try {
+      const workList = await getPublishableWorks()
+      setWorks(workList)
+    } catch {
+      setError('加载作品列表失败')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handlePublish() {
-    if (!title.trim()) {
-      setError('请输入标题')
-      return
-    }
-
-    if (imageUrls.length === 0) {
-      setError('请至少添加一张图片')
+    if (!selectedWorkId) {
+      setError('请选择一个作品')
       return
     }
 
@@ -83,11 +70,9 @@ export function PublishNoteDialog({
     setError('')
 
     try {
-      const res = await publishNoteToXhs({
+      const res = await publishFromWork({
         accountId,
-        title: title.trim(),
-        content: content.trim(),
-        imageUrls,
+        workId: selectedWorkId,
       })
 
       if (res.success && res.data) {
@@ -104,14 +89,19 @@ export function PublishNoteDialog({
 
   function handleClose() {
     if (!publishing) {
-      setTitle('')
-      setContent('')
-      setImageUrls([])
-      setNewImageUrl('')
+      setSelectedWorkId(null)
       setError('')
       setResult(null)
       onOpenChange(false)
     }
+  }
+
+  // 获取作品的显示信息
+  function getWorkDisplay(work: Work) {
+    const title = work.draftContent?.title?.text || work.title || '无标题'
+    const coverUrl = work.draftContent?.cover?.imageUrl || work.coverUrl
+    const imageCount = (work.draftContent?.images?.length || 0) + (coverUrl ? 1 : 0)
+    return { title, coverUrl, imageCount }
   }
 
   // 发布成功后的展示
@@ -153,118 +143,85 @@ export function PublishNoteDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>发布笔记</DialogTitle>
           <DialogDescription>
-            填写笔记内容并发布到小红书
+            选择一个作品发布到小红书
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          {/* 标题 */}
-          <div className="space-y-2">
-            <Label htmlFor="title">标题 *</Label>
-            <Input
-              id="title"
-              placeholder="输入笔记标题"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              maxLength={20}
-              disabled={publishing}
-            />
-            <p className="text-xs text-muted-foreground text-right">
-              {title.length}/20
-            </p>
-          </div>
+        <div className="py-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : works.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">
+              <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>暂无可发布的作品</p>
+              <p className="text-sm mt-1">请先创建作品</p>
+            </div>
+          ) : (
+            <div className="h-[400px] overflow-y-auto pr-4">
+              <div className="space-y-2">
+                {works.map((work) => {
+                  const { title, coverUrl, imageCount } = getWorkDisplay(work)
+                  const isSelected = selectedWorkId === work._id?.toString()
 
-          {/* 正文 */}
-          <div className="space-y-2">
-            <Label htmlFor="content">正文</Label>
-            <Textarea
-              id="content"
-              placeholder="输入笔记正文内容，可使用 #话题[话题]# 格式添加话题"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              rows={5}
-              disabled={publishing}
-            />
-            <p className="text-xs text-muted-foreground text-right">
-              {content.length} 字
-            </p>
-          </div>
-
-          {/* 图片列表 */}
-          <div className="space-y-2">
-            <Label>图片 * (最多 9 张)</Label>
-
-            {/* 已添加的图片 */}
-            {imageUrls.length > 0 && (
-              <div className="grid grid-cols-3 gap-2">
-                {imageUrls.map((url, index) => (
-                  <div
-                    key={index}
-                    className="relative aspect-square rounded-lg overflow-hidden bg-muted group"
-                  >
-                    <Image
-                      src={url}
-                      alt={`图片 ${index + 1}`}
-                      fill
-                      className="object-cover"
-                      sizes="120px"
-                    />
+                  return (
                     <button
+                      key={work._id?.toString()}
                       type="button"
-                      onClick={() => handleRemoveImage(index)}
+                      onClick={() => setSelectedWorkId(work._id?.toString() || null)}
                       disabled={publishing}
-                      className="absolute top-1 right-1 p-1 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left ${
+                        isSelected
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:bg-muted/50'
+                      }`}
                     >
-                      <X className="h-3 w-3 text-white" />
+                      {/* 封面 */}
+                      <div className="relative w-16 h-16 flex-shrink-0 rounded-md overflow-hidden bg-muted">
+                        {coverUrl ? (
+                          <Image
+                            src={coverUrl}
+                            alt={title}
+                            fill
+                            className="object-cover"
+                            sizes="64px"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 内容 */}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm line-clamp-2">{title}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {imageCount} 张图片
+                        </p>
+                      </div>
+
+                      {/* 选中标记 */}
+                      {isSelected && (
+                        <div className="flex-shrink-0">
+                          <Check className="h-5 w-5 text-primary" />
+                        </div>
+                      )}
                     </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-            )}
-
-            {/* 添加图片 */}
-            {imageUrls.length < 9 && (
-              <div className="flex gap-2">
-                <Input
-                  placeholder="输入图片 URL"
-                  value={newImageUrl}
-                  onChange={(e) => setNewImageUrl(e.target.value)}
-                  disabled={publishing}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      handleAddImage()
-                    }
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleAddImage}
-                  disabled={publishing || !newImageUrl.trim()}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
-
-            {imageUrls.length === 0 && (
-              <div className="flex items-center justify-center p-8 border-2 border-dashed rounded-lg">
-                <div className="text-center text-muted-foreground">
-                  <ImageIcon className="h-8 w-8 mx-auto mb-2" />
-                  <p className="text-sm">请添加图片 URL</p>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* 错误提示 */}
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               {error}
             </div>
           )}
@@ -274,7 +231,10 @@ export function PublishNoteDialog({
           <Button variant="outline" onClick={handleClose} disabled={publishing}>
             取消
           </Button>
-          <Button onClick={handlePublish} disabled={publishing}>
+          <Button
+            onClick={handlePublish}
+            disabled={publishing || !selectedWorkId}
+          >
             {publishing ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

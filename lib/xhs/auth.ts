@@ -14,6 +14,7 @@ export interface CookieValidation {
   subAccount?: boolean
   roleType?: number
   permissionsCount?: number
+  hasChipsPermission?: boolean
   accountStatus?: ParsedAccountStatus
   hasAbnormalIssues?: boolean
   errorMessage?: string
@@ -61,6 +62,7 @@ export async function validateCookie(cookie: string): Promise<CookieValidation> 
       subAccount: userInfoFull.subAccount,
       roleType: userInfoFull.roleType,
       permissionsCount: userInfoFull.permissionsCount,
+      hasChipsPermission: userInfoFull.hasChipsPermission,
       accountStatus: userInfoFull.accountStatus,
       hasAbnormalIssues: userInfoFull.hasAbnormalIssues,
     }
