@@ -1,7 +1,12 @@
 import { ObjectId } from 'mongodb'
 
 // 账号状态
-export type AccountStatus = 'active' | 'inactive' | 'suspended' | 'cookie_expired'
+// pending: 待完善（仅有作者信息，无 cookie）
+// active: 正常
+// inactive: 已停用
+// suspended: 已暂停
+// cookie_expired: Cookie 已过期
+export type AccountStatus = 'pending' | 'active' | 'inactive' | 'suspended' | 'cookie_expired'
 
 // 登录方式
 export type LoginType = 'cookie' | 'password' | 'qrcode'
@@ -13,6 +18,18 @@ export interface AccountThresholds {
   maxFailRetries: number      // 最大失败重试次数
 }
 
+// 账号状态详情（来自 API）
+export interface AccountStatusDetail {
+  isSubAccountFrozen: boolean    // 子账号是否冻结
+  freezeReasons: string[]        // 冻结原因列表
+  abnormalReasons: string[]      // 异常原因列表
+  adStatus: number               // 广告状态 (1=正常)
+  professionalState: number      // 专业状态
+  subjectState: number           // 主体状态 (200=正常)
+  promotionQualityState: number  // 推广资质状态 (200=正常)
+  certificationState: number     // 认证状态 (2=已认证)
+}
+
 // 小红书账号
 export interface XhsAccount {
   _id: ObjectId
@@ -22,27 +39,37 @@ export interface XhsAccount {
   // 基础信息
   name: string                    // 账号名称/备注
   visitorUserId: string           // 小红书用户 ID (原 userId)
-  cookie: string                  // 登录 Cookie (加密存储)
+  cookie?: string                 // 登录 Cookie (pending 状态时为空)
+  nickname?: string               // 小红书昵称
+  avatar?: string                 // 头像 URL
 
   // 登录信息
   loginType?: LoginType           // 登录方式
   loginEmail?: string             // 登录邮箱（账号密码登录时保存）
 
-  // 聚光平台信息
-  advertiserId: string            // 广告主 ID
-  balance: number                 // 账户余额
+  // 聚光平台信息（pending 状态时可能为空）
+  advertiserId?: string           // 广告主 ID
+  sellerId?: string               // 卖家 ID
+  balance?: number                // 账户余额
 
-  // 托管配置
-  autoManaged: boolean            // 是否开启自动托管
-  dailyBudget: number             // 每日预算上限
-  defaultBidAmount: number        // 默认出价 (私信咨询量)
+  // 账号详情
+  subAccount?: boolean            // 是否子账号
+  roleType?: number               // 角色类型
+  permissionsCount?: number       // 权限数量
+  accountStatusDetail?: AccountStatusDetail  // 账号状态详情
+  hasAbnormalIssues?: boolean     // 是否有异常问题
+
+  // 托管配置（pending 状态时使用默认值）
+  autoManaged?: boolean           // 是否开启自动托管
+  dailyBudget?: number            // 每日预算上限
+  defaultBidAmount?: number       // 默认出价 (私信咨询量)
 
   // 效果阈值配置
-  thresholds: AccountThresholds
+  thresholds?: AccountThresholds
 
   // 状态
   status: AccountStatus
-  lastSyncAt: Date                // 最后同步时间
+  lastSyncAt?: Date               // 最后同步时间
   cookieExpireAt?: Date           // Cookie 过期时间
 
   // 审计字段

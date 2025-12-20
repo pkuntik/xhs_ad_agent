@@ -40,8 +40,9 @@ export async function loginWithEmailPassword(
     const timestamp = Date.now()
     const uri = '/api/cas/customer/web/service-ticket'
 
-    // 生成临时 a1 值（用于签名）
+    // 生成临时 a1 和 webId 值（模拟浏览器访问时生成的追踪 cookies）
     const tempA1 = generateTempA1()
+    const tempWebId = generateWebId()
 
     // 生成签名
     const xS = xhshow.signXsPost(uri, tempA1, 'xhs-pc-web', {
@@ -112,11 +113,13 @@ export async function loginWithEmailPassword(
       }
     }
 
-    // 解析返回的 cookies
+    // 解析返回的 cookies，并添加生成的追踪 cookies
     const cookies = parseCookiesFromHeaders(setCookieHeaders)
+    cookies['a1'] = tempA1
+    cookies['webId'] = tempWebId
 
-    // 使用 ticket 换取完整 session
-    const sessionResult = await exchangeTicketForSession(data.data.ticket, cookies)
+    // 使用 ticket 换取完整 session，传入 a1 以保持签名一致
+    const sessionResult = await exchangeTicketForSession(data.data.ticket, cookies, tempA1)
 
     if (!sessionResult.success) {
       return sessionResult
@@ -134,33 +137,51 @@ export async function loginWithEmailPassword(
 
 /**
  * 使用 ticket 换取完整 session
+ * POST /api/leona/session
  */
 async function exchangeTicketForSession(
   ticket: string,
-  initialCookies: Record<string, string>
+  initialCookies: Record<string, string>,
+  a1Value: string
 ): Promise<LoginResult> {
   try {
+    const xhshow = new Xhshow()
+    const timestamp = Date.now()
+    const uri = '/api/leona/session'
+
     // 构建完整的 cookie 字符串
     const cookieStr = Object.entries(initialCookies)
       .map(([k, v]) => `${k}=${v}`)
       .join('; ')
 
-    // 访问聚光平台首页，带上 ticket 参数
-    const url = `${AD_BASE_URL}/?ticket=${encodeURIComponent(ticket)}`
+    const requestBody = {
+      ticket,
+      clientId: AD_BASE_URL,
+    }
+
+    // 生成签名（使用传入的 a1 值保持一致）
+    const xS = xhshow.signXsPost(uri, a1Value, 'xhs-pc-web', requestBody, Math.floor(timestamp / 1000))
+    const xSCommon = xhshow.signXsc({ a1: a1Value })
 
     const fetchOptions: RequestInit = {
-      method: 'GET',
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'zh-CN,zh-TW;q=0.9,zh;q=0.8,en-US;q=0.7,en;q=0.6',
+        'Origin': AD_BASE_URL,
+        'Referer': `${AD_BASE_URL}/`,
+        'X-t': timestamp.toString(),
+        'X-s': xS,
+        'X-S-Common': xSCommon,
         'Cookie': cookieStr,
       },
-      redirect: 'manual', // 不自动重定向，手动处理
+      body: JSON.stringify(requestBody),
     }
 
     const dispatcher = getDispatcher()
-    const response = await fetch(url, {
+    const response = await fetch(`${AD_BASE_URL}${uri}`, {
       ...fetchOptions,
       dispatcher,
     } as RequestInit)
@@ -168,6 +189,19 @@ async function exchangeTicketForSession(
     // 获取返回的新 cookies
     const setCookieHeaders = response.headers.getSetCookie?.() || []
     const newCookies = parseCookiesFromHeaders(setCookieHeaders)
+
+    const data = await response.json() as {
+      code: number
+      success: boolean
+      msg: string
+    }
+
+    if (!data.success || data.code !== 0) {
+      return {
+        success: false,
+        error: data.msg || '会话建立失败',
+      }
+    }
 
     // 合并所有 cookies
     const allCookies = { ...initialCookies, ...newCookies }
@@ -181,10 +215,11 @@ async function exchangeTicketForSession(
     const userId = allCookies['x-user-id-ad.xiaohongshu.com'] || ''
     const advertiserId = allCookies['customerClientId'] || ''
 
-    if (!userId && !allCookies['customer-sso-sid']) {
+    // 检查是否获取到了关键的 session cookie
+    if (!allCookies['access-token-ad.xiaohongshu.com'] && !allCookies['ares.beaker.session.id']) {
       return {
         success: false,
-        error: '登录会话建立失败',
+        error: '登录会话建立失败，未获取到 session',
       }
     }
 
@@ -210,6 +245,18 @@ function generateTempA1(): string {
   const chars = '0123456789abcdef'
   let result = ''
   for (let i = 0; i < 52; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
+}
+
+/**
+ * 生成 webId 值（模拟浏览器指纹）
+ */
+function generateWebId(): string {
+  const chars = '0123456789abcdef'
+  let result = ''
+  for (let i = 0; i < 32; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length))
   }
   return result

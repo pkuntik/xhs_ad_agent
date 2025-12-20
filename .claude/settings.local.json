@@ -11,7 +11,8 @@
       "Bash(pnpm:*)",
       "Bash(npx:*)",
       "Bash(git:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(del \"e:\\\\2025\\\\xhs_ad_agent\\\\types\\\\author.ts\")"
     ]
   }
 }

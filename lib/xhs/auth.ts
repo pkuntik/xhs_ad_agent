@@ -1,4 +1,5 @@
-import { getAccountInfo } from './api/account'
+import { getAccountInfo, getUserInfoFull } from './api/account'
+import type { ParsedAccountStatus } from './api/account'
 import { CookieInvalidError } from './client'
 
 export interface CookieValidation {
@@ -8,6 +9,13 @@ export interface CookieValidation {
   balance?: number
   nickname?: string
   avatar?: string
+  // 新增详细信息
+  sellerId?: string
+  subAccount?: boolean
+  roleType?: number
+  permissionsCount?: number
+  accountStatus?: ParsedAccountStatus
+  hasAbnormalIssues?: boolean
   errorMessage?: string
 }
 
@@ -27,16 +35,34 @@ export async function validateCookie(cookie: string): Promise<CookieValidation> 
   }
 
   try {
-    // 调用实际 API 验证 Cookie
-    const info = await getAccountInfo({ cookie })
+    // 调用完整用户信息 API
+    const userInfoFull = await getUserInfoFull(cookie)
+
+    // 获取余额（需要单独调用）
+    let balance = 0
+    let advertiserId = ''
+    try {
+      const info = await getAccountInfo({ cookie })
+      balance = info.balance
+      advertiserId = info.advertiserId
+    } catch {
+      // 余额获取失败不影响验证，使用 userInfoFull 中的 advertiserId
+      advertiserId = userInfoFull.advertiserId?.toString() || ''
+    }
 
     return {
       valid: true,
-      userId: info.userId,
-      advertiserId: info.advertiserId,
-      balance: info.balance,
-      nickname: info.nickname,
-      avatar: info.avatar,
+      userId: userInfoFull.userId,
+      advertiserId,
+      balance,
+      nickname: userInfoFull.nickname,
+      avatar: userInfoFull.avatar,
+      sellerId: userInfoFull.sellerId,
+      subAccount: userInfoFull.subAccount,
+      roleType: userInfoFull.roleType,
+      permissionsCount: userInfoFull.permissionsCount,
+      accountStatus: userInfoFull.accountStatus,
+      hasAbnormalIssues: userInfoFull.hasAbnormalIssues,
     }
   } catch (error) {
     if (error instanceof CookieInvalidError) {

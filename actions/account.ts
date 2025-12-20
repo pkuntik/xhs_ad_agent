@@ -10,6 +10,8 @@ import type { User } from '@/types/user'
 import { getCurrentUserId } from '@/lib/auth/session'
 import { deductBalance } from '@/lib/billing/service'
 
+import type { AccountStatusDetail } from '@/types/account'
+
 // Cookie 验证结果
 export interface VerifyCookieResult {
   success: boolean
@@ -20,6 +22,12 @@ export interface VerifyCookieResult {
     nickname: string
     avatar?: string
     balance: number
+    // 新增详细信息
+    subAccount?: boolean
+    roleType?: number
+    permissionsCount?: number
+    accountStatus?: AccountStatusDetail
+    hasAbnormalIssues?: boolean
   }
 }
 
@@ -56,6 +64,11 @@ export async function verifyCookie(cookie: string): Promise<VerifyCookieResult> 
       nickname: cookieInfo.nickname || '未知用户',
       avatar: cookieInfo.avatar,
       balance: cookieInfo.balance || 0,
+      subAccount: cookieInfo.subAccount,
+      roleType: cookieInfo.roleType,
+      permissionsCount: cookieInfo.permissionsCount,
+      accountStatus: cookieInfo.accountStatus,
+      hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
     }
   }
 }
@@ -155,9 +168,17 @@ export async function createAccount(input: CreateAccountInput): Promise<{ succes
       name: accountName,
       visitorUserId: cookieInfo.userId || '',
       cookie: cookie,
+      nickname: cookieInfo.nickname,
+      avatar: cookieInfo.avatar,
       loginType: 'cookie',
       advertiserId: cookieInfo.advertiserId || '',
+      sellerId: cookieInfo.sellerId,
       balance: cookieInfo.balance || 0,
+      subAccount: cookieInfo.subAccount,
+      roleType: cookieInfo.roleType,
+      permissionsCount: cookieInfo.permissionsCount,
+      accountStatusDetail: cookieInfo.accountStatus,
+      hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
       autoManaged: false,
       dailyBudget,
       defaultBidAmount,
@@ -210,10 +231,18 @@ export async function updateAccountCookie(
       { _id: new ObjectId(id) },
       {
         $set: {
-          cookie: cookie,  // 直接存储，不加密
-          userId: cookieInfo.userId || undefined,
+          cookie: cookie,
+          visitorUserId: cookieInfo.userId || undefined,
+          nickname: cookieInfo.nickname,
+          avatar: cookieInfo.avatar,
           advertiserId: cookieInfo.advertiserId || undefined,
+          sellerId: cookieInfo.sellerId,
           balance: cookieInfo.balance || undefined,
+          subAccount: cookieInfo.subAccount,
+          roleType: cookieInfo.roleType,
+          permissionsCount: cookieInfo.permissionsCount,
+          accountStatusDetail: cookieInfo.accountStatus,
+          hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
           status: 'active',
           lastSyncAt: new Date(),
           updatedAt: new Date(),
@@ -262,8 +291,16 @@ export async function updateAccountByPassword(
           loginType: 'password',
           loginEmail: email,
           visitorUserId: cookieInfo.userId || undefined,
+          nickname: cookieInfo.nickname,
+          avatar: cookieInfo.avatar,
           advertiserId: cookieInfo.advertiserId || undefined,
+          sellerId: cookieInfo.sellerId,
           balance: cookieInfo.balance || undefined,
+          subAccount: cookieInfo.subAccount,
+          roleType: cookieInfo.roleType,
+          permissionsCount: cookieInfo.permissionsCount,
+          accountStatusDetail: cookieInfo.accountStatus,
+          hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
           status: 'active',
           lastSyncAt: new Date(),
           updatedAt: new Date(),
@@ -582,10 +619,18 @@ export async function createAccountByPassword(
       name: accountName,
       visitorUserId: cookieInfo.userId || '',
       cookie: loginResult.cookie,
+      nickname: cookieInfo.nickname,
+      avatar: cookieInfo.avatar,
       loginType: 'password',
       loginEmail: email,
       advertiserId: cookieInfo.advertiserId || '',
+      sellerId: cookieInfo.sellerId,
       balance: cookieInfo.balance || 0,
+      subAccount: cookieInfo.subAccount,
+      roleType: cookieInfo.roleType,
+      permissionsCount: cookieInfo.permissionsCount,
+      accountStatusDetail: cookieInfo.accountStatus,
+      hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
       autoManaged: false,
       dailyBudget,
       defaultBidAmount,

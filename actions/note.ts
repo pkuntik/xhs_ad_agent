@@ -13,7 +13,14 @@ import type {
   parseNoteIndexes
 } from '@/types/note'
 import type { Publication } from '@/types/work'
-import type { LinkedAuthor, CreateLinkedAuthorInput } from '@/types/author'
+import type { XhsAccount } from '@/types/account'
+
+// 创建关联作者的输入（创建待完善账号）
+interface CreateLinkedAuthorInput {
+  userId: string
+  nickname: string
+  avatar: string
+}
 
 // 验证笔记并获取详情
 export async function fetchAndValidateNote(noteUrl: string): Promise<{
@@ -26,11 +33,7 @@ export async function fetchAndValidateNote(noteUrl: string): Promise<{
     _id: string
     name: string
     visitorUserId: string
-  }
-  linkedAuthor?: {
-    _id: string
-    nickname: string
-    userId: string
+    status: string
   }
   error?: string
 }> {
@@ -75,12 +78,12 @@ export async function fetchAndValidateNote(noteUrl: string): Promise<{
       comments: indexes.comments,
     }
 
-    // 检查作者是否已在账号列表中
+    // 检查作者是否已在账号列表中（包括 pending 状态）
     const db = await getDb()
     const authorUserId = detail.baseInfo.author.userId
 
     const existingAccount = await db
-      .collection(COLLECTIONS.ACCOUNTS)
+      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
       .findOne({ visitorUserId: authorUserId })
 
     if (existingAccount) {
@@ -94,31 +97,12 @@ export async function fetchAndValidateNote(noteUrl: string): Promise<{
           _id: existingAccount._id.toString(),
           name: existingAccount.name,
           visitorUserId: existingAccount.visitorUserId,
+          status: existingAccount.status,
         },
       }
     }
 
-    // 检查是否已有关联作者记录
-    const linkedAuthor = await db
-      .collection(COLLECTIONS.LINKED_AUTHORS)
-      .findOne({ userId: authorUserId })
-
-    if (linkedAuthor) {
-      return {
-        success: true,
-        noteId,
-        noteDetail: detail,
-        cachedDetail,
-        snapshot,
-        linkedAuthor: {
-          _id: linkedAuthor._id.toString(),
-          nickname: linkedAuthor.nickname,
-          userId: linkedAuthor.userId,
-        },
-      }
-    }
-
-    // 作者不在任何列表中
+    // 作者不在账号列表中
     return {
       success: true,
       noteId,
@@ -135,7 +119,7 @@ export async function fetchAndValidateNote(noteUrl: string): Promise<{
   }
 }
 
-// 创建关联作者记录
+// 创建待完善账号（原 createLinkedAuthor）
 export async function createLinkedAuthor(
   input: CreateLinkedAuthorInput
 ): Promise<{ success: boolean; authorId?: string; error?: string }> {
@@ -147,39 +131,31 @@ export async function createLinkedAuthor(
 
     const db = await getDb()
 
-    // 检查是否已存在
+    // 检查是否已存在（包括 pending 和 active 状态）
     const existing = await db
-      .collection(COLLECTIONS.LINKED_AUTHORS)
-      .findOne({ userId: input.userId })
+      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+      .findOne({ visitorUserId: input.userId })
 
     if (existing) {
       return { success: true, authorId: existing._id.toString() }
     }
 
-    // 检查是否已有完整账号
-    const existingAccount = await db
-      .collection(COLLECTIONS.ACCOUNTS)
-      .findOne({ visitorUserId: input.userId })
-
-    if (existingAccount) {
-      return { success: false, error: '该作者已有完整账号' }
-    }
-
     const now = new Date()
-    const author: Omit<LinkedAuthor, '_id'> = {
-      userId: input.userId,
+    // 创建待完善账号（pending 状态，无 cookie）
+    const pendingAccount: Omit<XhsAccount, '_id'> = {
+      userId: new ObjectId(user.userId),
+      name: input.nickname,
+      visitorUserId: input.userId,
       nickname: input.nickname,
       avatar: input.avatar,
-      linkedAt: now,
       status: 'pending',
-      createdBy: new ObjectId(user.userId),
       createdAt: now,
       updatedAt: now,
     }
 
     const result = await db
-      .collection(COLLECTIONS.LINKED_AUTHORS)
-      .insertOne(author)
+      .collection(COLLECTIONS.ACCOUNTS)
+      .insertOne(pendingAccount)
 
     revalidatePath('/accounts')
 
@@ -193,39 +169,38 @@ export async function createLinkedAuthor(
   }
 }
 
-// 获取关联作者列表
+// 获取待完善账号列表（原 getLinkedAuthors）
 export async function getLinkedAuthors(): Promise<{
   success: boolean
   authors?: Array<{
     _id: string
-    userId: string
+    visitorUserId: string
     nickname: string
     avatar: string
-    linkedAt: Date
+    createdAt: Date
     status: string
-    accountId?: string
   }>
   error?: string
 }> {
   try {
     const db = await getDb()
 
-    const authors = await db
-      .collection(COLLECTIONS.LINKED_AUTHORS)
-      .find({})
-      .sort({ linkedAt: -1 })
+    // 获取 pending 状态的账号
+    const accounts = await db
+      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+      .find({ status: 'pending' })
+      .sort({ createdAt: -1 })
       .toArray()
 
     return {
       success: true,
-      authors: authors.map((a) => ({
+      authors: accounts.map((a) => ({
         _id: a._id.toString(),
-        userId: a.userId,
-        nickname: a.nickname,
-        avatar: a.avatar,
-        linkedAt: a.linkedAt,
+        visitorUserId: a.visitorUserId,
+        nickname: a.nickname || a.name,
+        avatar: a.avatar || '',
+        createdAt: a.createdAt,
         status: a.status,
-        accountId: a.accountId?.toString(),
       })),
     }
   } catch (error) {
