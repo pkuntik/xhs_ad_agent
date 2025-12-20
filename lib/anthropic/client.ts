@@ -48,6 +48,10 @@ export function createAnthropicClient(): Anthropic {
     apiKey,
     baseURL,
     fetch: customFetch,
+    defaultHeaders: {
+      "User-Agent": "claude-cli/3.0.0 (external, claude-vscode, agent-sdk/1.0.0)",
+      "anthropic-version": "",  // 清空版本头
+    }
   });
 }
 
@@ -55,5 +59,5 @@ export function createAnthropicClient(): Anthropic {
  * 生成用户 ID（用于 metadata）
  */
 export function generateUserId(): string {
-  return `user_${Math.random().toString(36).substring(2)}${Date.now()}`;
+  return `user_136b96f73d9269a6adb30b1f5317f7f60a080389ad1ce0964ecdf3132509479c_account__session_${Math.random().toString(36).substring(2)}${Date.now()}`;
 }
