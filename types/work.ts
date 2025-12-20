@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb'
 import type { GenerationResult } from './creation'
-import type { CachedNoteDetail, NoteSnapshot } from './note'
+import type { CachedNoteDetail, NoteSnapshot, SyncLogEntry } from './note'
 
 // 作品状态
 export type WorkStatus = 'unused' | 'scanned' | 'published' | 'promoting' | 'paused' | 'archived'
@@ -83,6 +83,9 @@ export interface Publication {
 
   // 数据快照（用于趋势分析）
   snapshots?: NoteSnapshot[]
+
+  // 同步日志
+  syncLogs?: SyncLogEntry[]
 
   // 同步时间
   lastSyncAt?: Date               // 上次同步时间

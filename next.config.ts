@@ -14,7 +14,19 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'sns-avatar-qc.xhscdn.com',
+      },
+      {
+        protocol: 'https',
         hostname: 'ci.xiaohongshu.com',
+      },
+      {
+        protocol: 'http',
+        hostname: 'ci.xiaohongshu.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'ye.e-idear.com',
       },
     ],
     localPatterns: [

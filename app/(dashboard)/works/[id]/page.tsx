@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Copy, Check, ExternalLink, Edit2, Save, ArrowLeft, RefreshCw, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { getWorkById, updateWorkContent, bindPublishedNote, updateWorkImages } from '@/actions/work'
 import { regeneratePlan } from '@/actions/creation'
 import { fetchAndValidateNote } from '@/actions/note'
@@ -239,7 +240,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
         .filter(Boolean)
 
       if (existingNoteIds.includes(result.noteId)) {
-        setError('该笔记已绑定，请勿重复添加')
+        toast.error('该笔记已绑定，请勿重复添加')
         return
       }
 
@@ -1088,7 +1089,6 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
           snapshot={pendingNoteData.snapshot}
           existingAccount={pendingNoteData.existingAccount}
           linkedAuthor={pendingNoteData.linkedAuthor}
-          workTitle={work.title}
           onConfirm={handleConfirmBind}
           onCancel={handleCancelBind}
         />

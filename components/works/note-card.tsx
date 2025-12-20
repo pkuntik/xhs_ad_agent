@@ -6,6 +6,14 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import {
   ExternalLink,
   RefreshCw,
   Eye,
@@ -18,8 +26,12 @@ import {
   Minus,
   User,
   Loader2,
+  Trash2,
+  History,
 } from 'lucide-react'
-import { syncNoteData } from '@/actions/note'
+import { toast } from 'sonner'
+import { syncNoteData, deletePublication } from '@/actions/note'
+import { SyncLogDialog } from '@/components/works/sync-log-dialog'
 import type { Publication } from '@/types/work'
 import type { NoteSnapshot } from '@/types/note'
 
@@ -28,6 +40,7 @@ interface NoteCardProps {
   workId: string
   index: number
   onRefresh?: () => void
+  onDelete?: () => void
 }
 
 function formatNumber(num: number): string {
@@ -52,12 +65,16 @@ function TrendIcon({ trend }: { trend: 'up' | 'down' | 'stable' }) {
   return <Minus className="h-3 w-3 text-gray-400" />
 }
 
-export function NoteCard({ publication, workId, index, onRefresh }: NoteCardProps) {
+export function NoteCard({ publication, workId, index, onRefresh, onDelete }: NoteCardProps) {
   const [syncing, setSyncing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showLogDialog, setShowLogDialog] = useState(false)
   const [error, setError] = useState('')
 
   const detail = publication.noteDetail
   const snapshots = publication.snapshots || []
+  const syncLogs = publication.syncLogs || []
   const latestSnapshot = snapshots[snapshots.length - 1]
   const previousSnapshot = snapshots.length > 1 ? snapshots[snapshots.length - 2] : null
 
@@ -79,6 +96,25 @@ export function NoteCard({ publication, workId, index, onRefresh }: NoteCardProp
     }
   }
 
+  async function handleDelete() {
+    setDeleting(true)
+
+    try {
+      const result = await deletePublication(workId, index)
+      if (result.success) {
+        toast.success('已删除绑定的笔记')
+        setShowDeleteDialog(false)
+        onDelete?.()
+      } else {
+        toast.error(result.error || '删除失败')
+      }
+    } catch {
+      toast.error('删除失败')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   // 如果没有详情数据，显示简单版本
   if (!detail) {
     return (
@@ -94,25 +130,72 @@ export function NoteCard({ publication, workId, index, onRefresh }: NoteCardProp
               <ExternalLink className="h-4 w-4 flex-shrink-0" />
               <span className="truncate">{publication.noteUrl}</span>
             </a>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleSync}
-              disabled={syncing}
-              className="ml-2 flex-shrink-0"
-            >
-              {syncing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-            </Button>
+            <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowLogDialog(true)}
+                title="同步日志"
+              >
+                <History className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSync}
+                disabled={syncing}
+                title="同步数据"
+              >
+                {syncing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDeleteDialog(true)}
+                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                title="删除"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
             绑定于 {new Date(publication.publishedAt).toLocaleString('zh-CN')}
           </p>
           {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
         </CardContent>
+
+        {/* 删除确认对话框 */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>确认删除</DialogTitle>
+              <DialogDescription>
+                确定要删除这个绑定的笔记吗？此操作不可恢复。
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                取消
+              </Button>
+              <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                删除
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 同步日志对话框 */}
+        <SyncLogDialog
+          open={showLogDialog}
+          onOpenChange={setShowLogDialog}
+          logs={syncLogs}
+        />
       </Card>
     )
   }
@@ -174,19 +257,40 @@ export function NoteCard({ publication, workId, index, onRefresh }: NoteCardProp
 
           {/* 操作按钮 */}
           <div className="flex flex-col items-end justify-between">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleSync}
-              disabled={syncing}
-              className="h-8 w-8"
-            >
-              {syncing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-            </Button>
+            <div className="flex items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowLogDialog(true)}
+                className="h-7 w-7"
+                title="同步日志"
+              >
+                <History className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleSync}
+                disabled={syncing}
+                className="h-7 w-7"
+                title="同步数据"
+              >
+                {syncing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowDeleteDialog(true)}
+                className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50"
+                title="删除"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
             {publication.lastSyncAt && (
               <span className="text-[10px] text-muted-foreground">
                 {new Date(publication.lastSyncAt).toLocaleString('zh-CN', {
@@ -250,6 +354,35 @@ export function NoteCard({ publication, workId, index, onRefresh }: NoteCardProp
           </div>
         )}
       </CardContent>
+
+      {/* 删除确认对话框 */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              确定要删除绑定的笔记「{detail.title}」吗？此操作不可恢复。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 同步日志对话框 */}
+      <SyncLogDialog
+        open={showLogDialog}
+        onOpenChange={setShowLogDialog}
+        logs={syncLogs}
+        noteTitle={detail.title}
+      />
     </Card>
   )
 }

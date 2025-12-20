@@ -44,7 +44,6 @@ interface NoteBindingDialogProps {
     nickname: string
     userId: string
   }
-  workTitle?: string
   onConfirm: (options: {
     noteId: string
     noteUrl: string
@@ -75,7 +74,6 @@ export function NoteBindingDialog({
   snapshot,
   existingAccount,
   linkedAuthor,
-  workTitle,
   onConfirm,
   onCancel,
 }: NoteBindingDialogProps) {
@@ -85,13 +83,12 @@ export function NoteBindingDialog({
 
   const baseInfo = noteDetail.baseInfo
 
-  // 检查标题是否匹配（用于验证是否是同一篇笔记）
-  const titleMatches = !workTitle ||
-    baseInfo.title.includes(workTitle) ||
-    workTitle.includes(baseInfo.title) ||
-    baseInfo.title.length > 0
+  // 获取笔记标题
+  const noteTitle = baseInfo?.title || ''
 
   async function handleAddAuthor() {
+    if (!baseInfo?.author) return
+
     setAddingAuthor(true)
     setError('')
 
@@ -137,11 +134,11 @@ export function NoteBindingDialog({
         <div className="space-y-4">
           {/* 笔记预览 */}
           <div className="flex gap-3 p-3 bg-muted/50 rounded-lg">
-            {baseInfo.images[0] && (
+            {baseInfo?.images?.[0] && (
               <div className="w-16 h-16 flex-shrink-0 rounded-md overflow-hidden bg-muted">
                 <Image
                   src={baseInfo.images[0].link}
-                  alt={baseInfo.title}
+                  alt={noteTitle}
                   width={64}
                   height={64}
                   className="w-full h-full object-cover"
@@ -149,9 +146,9 @@ export function NoteBindingDialog({
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm line-clamp-2">{baseInfo.title}</p>
+              <p className="font-medium text-sm line-clamp-2">{noteTitle || '未知标题'}</p>
               <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                {baseInfo.content.slice(0, 100)}...
+                {baseInfo?.content?.slice(0, 100) || ''}...
               </p>
             </div>
           </div>
@@ -159,19 +156,19 @@ export function NoteBindingDialog({
           {/* 作者信息 */}
           <div className="flex items-center justify-between p-3 border rounded-lg">
             <div className="flex items-center gap-2">
-              {baseInfo.author.userSImage && (
+              {baseInfo?.author?.userSImage && (
                 <Image
                   src={baseInfo.author.userSImage}
-                  alt={baseInfo.author.nickname}
+                  alt={baseInfo.author.nickname || ''}
                   width={32}
                   height={32}
                   className="w-8 h-8 rounded-full"
                 />
               )}
               <div>
-                <p className="text-sm font-medium">{baseInfo.author.nickname}</p>
+                <p className="text-sm font-medium">{baseInfo?.author?.nickname || '未知作者'}</p>
                 <p className="text-xs text-muted-foreground">
-                  发布于 {baseInfo.createDate}
+                  发布于 {baseInfo?.createDate || '未知时间'}
                 </p>
               </div>
             </div>
@@ -186,7 +183,7 @@ export function NoteBindingDialog({
                 <CheckCircle className="h-3 w-3" />
                 已关联
               </Badge>
-            ) : (
+            ) : baseInfo?.author ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -202,7 +199,7 @@ export function NoteBindingDialog({
                   </>
                 )}
               </Button>
-            )}
+            ) : null}
           </div>
 
           {/* 数据统计 */}
@@ -235,11 +232,11 @@ export function NoteBindingDialog({
           </div>
 
           {/* 提示信息 */}
-          {!existingAccount && !linkedAuthor && !authorAdded && (
-            <div className="flex gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
-              <AlertCircle className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
-              <p className="text-blue-700">
-                该作者不在账号列表中。点击"关联作者"可记录作者信息，后续可在账号管理中添加 Cookie 完善账号。
+          {baseInfo?.author && !existingAccount && !linkedAuthor && !authorAdded && (
+            <div className="flex gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+              <AlertCircle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <p className="text-amber-700">
+                请先点击"关联作者"记录作者信息，才能绑定笔记。
               </p>
             </div>
           )}
@@ -256,7 +253,10 @@ export function NoteBindingDialog({
           <Button variant="outline" onClick={onCancel}>
             取消
           </Button>
-          <Button onClick={handleConfirm}>
+          <Button
+            onClick={handleConfirm}
+            disabled={baseInfo?.author && !existingAccount && !linkedAuthor && !authorAdded}
+          >
             确认绑定
           </Button>
         </DialogFooter>

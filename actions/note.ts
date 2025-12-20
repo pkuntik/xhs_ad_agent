@@ -9,6 +9,7 @@ import type {
   NoteDetail,
   CachedNoteDetail,
   NoteSnapshot,
+  SyncLogEntry,
   parseNoteIndexes
 } from '@/types/note'
 import type { Publication } from '@/types/work'
@@ -241,6 +242,8 @@ export async function syncNoteData(
   workId: string,
   publicationIndex: number
 ): Promise<{ success: boolean; error?: string }> {
+  const startTime = Date.now()
+
   try {
     const db = await getDb()
 
@@ -264,9 +267,36 @@ export async function syncNoteData(
       return { success: false, error: '无法获取笔记ID' }
     }
 
+    // 获取之前的快照（用于日志记录）
+    const snapshots = publication.snapshots || []
+    const previousSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : undefined
+
     // 获取最新笔记数据
     const result = await fetchNoteDetail(noteId)
     if (!result.success || !result.detail) {
+      // 记录失败日志
+      const syncLog: SyncLogEntry = {
+        syncedAt: new Date(),
+        success: false,
+        error: result.error || '获取笔记详情失败',
+        duration: Date.now() - startTime,
+        snapshotBefore: previousSnapshot ? {
+          impressions: previousSnapshot.impressions,
+          reads: previousSnapshot.reads,
+          likes: previousSnapshot.likes,
+        } : undefined,
+      }
+
+      const updatePath = `publications.${publicationIndex}`
+      await db.collection(COLLECTIONS.WORKS).updateOne(
+        { _id: new ObjectId(workId) },
+        {
+          $push: {
+            [`${updatePath}.syncLogs`]: syncLog,
+          },
+        } as any
+      )
+
       return { success: false, error: result.error || '获取笔记详情失败' }
     }
 
@@ -301,6 +331,21 @@ export async function syncNoteData(
     // 计算下次同步时间
     const nextSyncAt = calculateNextSyncTime(publication, newSnapshot)
 
+    // 创建成功日志
+    const syncLog: SyncLogEntry = {
+      syncedAt: new Date(),
+      success: true,
+      duration: Date.now() - startTime,
+      snapshotBefore: previousSnapshot ? {
+        impressions: previousSnapshot.impressions,
+        reads: previousSnapshot.reads,
+        likes: previousSnapshot.likes,
+        collects: previousSnapshot.collects,
+        comments: previousSnapshot.comments,
+      } : undefined,
+      snapshotAfter: newSnapshot,
+    }
+
     // 更新数据库
     const updatePath = `publications.${publicationIndex}`
     await db.collection(COLLECTIONS.WORKS).updateOne(
@@ -315,6 +360,7 @@ export async function syncNoteData(
         },
         $push: {
           [`${updatePath}.snapshots`]: newSnapshot,
+          [`${updatePath}.syncLogs`]: syncLog,
         },
       } as any
     )
@@ -427,5 +473,54 @@ export async function syncPendingNotes(): Promise<{
   } catch (error) {
     console.error('syncPendingNotes error:', error)
     return { success: false, synced: 0, errors: 1 }
+  }
+}
+
+// 删除绑定的笔记
+export async function deletePublication(
+  workId: string,
+  publicationIndex: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDb()
+
+    const work = await db
+      .collection(COLLECTIONS.WORKS)
+      .findOne({ _id: new ObjectId(workId) })
+
+    if (!work) {
+      return { success: false, error: '作品不存在' }
+    }
+
+    const publications = work.publications || []
+    if (publicationIndex < 0 || publicationIndex >= publications.length) {
+      return { success: false, error: '发布记录不存在' }
+    }
+
+    // 移除指定索引的发布记录
+    publications.splice(publicationIndex, 1)
+
+    // 更新数据库
+    await db.collection(COLLECTIONS.WORKS).updateOne(
+      { _id: new ObjectId(workId) },
+      {
+        $set: {
+          publications,
+          updatedAt: new Date(),
+          // 如果删除后没有发布记录了，更新状态
+          ...(publications.length === 0 ? { status: 'scanned' } : {}),
+        },
+      }
+    )
+
+    revalidatePath(`/works/${workId}`)
+
+    return { success: true }
+  } catch (error) {
+    console.error('deletePublication error:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '删除失败',
+    }
   }
 }

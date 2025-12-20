@@ -74,6 +74,16 @@ export interface NoteSnapshot {
   comments: number      // 评论量
 }
 
+// 同步日志条目
+export interface SyncLogEntry {
+  syncedAt: Date
+  success: boolean
+  error?: string
+  duration?: number     // 同步耗时（毫秒）
+  snapshotBefore?: Partial<NoteSnapshot>
+  snapshotAfter?: NoteSnapshot
+}
+
 // 缓存的笔记详情（存储在 Publication 中）
 export interface CachedNoteDetail {
   title: string
