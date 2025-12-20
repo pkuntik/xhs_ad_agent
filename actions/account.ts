@@ -500,7 +500,7 @@ export async function getAccountStats(id: string): Promise<{
   const accountId = new ObjectId(id)
 
   const [worksCount, campaignsCount, logsAgg] = await Promise.all([
-    db.collection(COLLECTIONS.WORKS).countDocuments({ accountId }),
+    db.collection(COLLECTIONS.REMOTE_NOTES).countDocuments({ accountId }),
     db.collection(COLLECTIONS.CAMPAIGNS).countDocuments({
       accountId,
       status: 'active',

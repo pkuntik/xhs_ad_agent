@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AutoManageToggle } from '@/components/accounts/auto-manage-toggle'
 import { RemoteNotesList } from '@/components/accounts/remote-notes-list'
+import { PublishNoteButton } from '@/components/accounts/publish-note-button'
 import { getAccountById, getAccountStats } from '@/actions/account'
-import { getWorks } from '@/actions/work'
 import { getCampaigns } from '@/actions/campaign'
 import { formatMoney, formatDateTime } from '@/lib/utils'
 
@@ -26,10 +26,9 @@ const statusMap = {
 
 export default async function AccountDetailPage({ params }: AccountDetailPageProps) {
   const { id } = await params
-  const [account, stats, works, campaigns] = await Promise.all([
+  const [account, stats, campaigns] = await Promise.all([
     getAccountById(id),
     getAccountStats(id),
-    getWorks(id),
     getCampaigns({ accountId: id }),
   ])
 
@@ -62,6 +61,7 @@ export default async function AccountDetailPage({ params }: AccountDetailPagePro
           </div>
         </div>
         <div className="flex items-center space-x-3">
+          <PublishNoteButton accountId={id} />
           <AutoManageToggle
             accountId={account._id.toString()}
             initialEnabled={account.autoManaged ?? false}
@@ -90,7 +90,7 @@ export default async function AccountDetailPage({ params }: AccountDetailPagePro
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">
-              作品数量
+              笔记数量
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -124,7 +124,7 @@ export default async function AccountDetailPage({ params }: AccountDetailPagePro
         <TabsList>
           <TabsTrigger value="works">
             <FileText className="mr-2 h-4 w-4" />
-            作品
+            笔记
           </TabsTrigger>
           <TabsTrigger value="campaigns">
             <Megaphone className="mr-2 h-4 w-4" />
@@ -132,58 +132,8 @@ export default async function AccountDetailPage({ params }: AccountDetailPagePro
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="works" className="mt-4 space-y-4">
-          {/* 平台笔记 */}
+        <TabsContent value="works" className="mt-4">
           <RemoteNotesList accountId={id} />
-
-          {/* 已绑定作品 */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">已绑定作品</CardTitle>
-              <Link href={`/works/new?accountId=${id}`}>
-                <Button size="sm">绑定作品</Button>
-              </Link>
-            </CardHeader>
-            <CardContent>
-              {works.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  暂无作品
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {works.map((work) => (
-                    <Link
-                      key={work._id.toString()}
-                      href={`/works/${work._id}`}
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                    >
-                      <div>
-                        <p className="font-medium">{work.title}</p>
-                        <p className="text-sm text-muted-foreground">
-                          笔记ID: {work.noteId}
-                        </p>
-                      </div>
-                      <Badge
-                        variant={
-                          work.status === 'promoting'
-                            ? 'default'
-                            : work.status === 'published'
-                              ? 'success'
-                              : 'secondary'
-                        }
-                      >
-                        {work.status === 'promoting'
-                          ? '投放中'
-                          : work.status === 'published'
-                            ? '已发布'
-                            : work.status}
-                      </Badge>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </TabsContent>
 
         <TabsContent value="campaigns" className="mt-4">
