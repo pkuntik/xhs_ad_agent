@@ -475,7 +475,8 @@ const DEFAULT_DELIVERY_CONFIG: DeliveryConfig = {
   budget: 2000,
   checkThreshold1: 60,
   checkThreshold2: 120,
-  maxRetries: 3,
+  minAttempts: 3,
+  minSuccessRate: 30,
 }
 
 // 初始投放统计
@@ -663,7 +664,8 @@ export async function startManagedDelivery(
       params: {
         checkThreshold1: config.checkThreshold1,
         checkThreshold2: config.checkThreshold2,
-        maxRetries: config.maxRetries,
+        minAttempts: config.minAttempts,
+        minSuccessRate: config.minSuccessRate,
       },
       retryCount: 0,
       maxRetries: 3,

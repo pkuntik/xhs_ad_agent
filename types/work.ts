@@ -8,7 +8,8 @@ export interface DeliveryConfig {
   budget: number                // 单次预算（默认 2000）
   checkThreshold1: number       // 第一检查点消耗阈值（默认 60）
   checkThreshold2: number       // 第二检查点消耗阈值（默认 120）
-  maxRetries: number            // 最大重试次数（默认 3）
+  minAttempts: number           // 最小投放次数（至少投放 N 次才考虑停止，默认 3）
+  minSuccessRate: number        // 有效投放比例（高于此比例就一直投放，默认 30%）
 }
 
 // 托管投放状态

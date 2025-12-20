@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Loader2, Settings, DollarSign, Target, RefreshCw } from 'lucide-react'
+import { Loader2, Settings, DollarSign, Target, RefreshCw, TrendingUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { updateDeliveryConfig, startManagedDelivery } from '@/actions/delivery'
 import type { DeliveryConfig } from '@/types/work'
@@ -34,7 +34,8 @@ const DEFAULT_CONFIG: DeliveryConfig = {
   budget: 2000,
   checkThreshold1: 60,
   checkThreshold2: 120,
-  maxRetries: 3,
+  minAttempts: 3,
+  minSuccessRate: 30,
 }
 
 export function DeliveryConfigDialog({
@@ -178,25 +179,47 @@ export function DeliveryConfigDialog({
             </p>
           </div>
 
-          {/* 最大重试次数 */}
+          {/* 最小投放次数 */}
           <div className="space-y-2">
             <Label className="flex items-center gap-2">
               <RefreshCw className="h-4 w-4 text-muted-foreground" />
-              最大重试次数
+              最小投放次数
             </Label>
             <div className="flex items-center gap-2">
               <Input
                 type="number"
-                value={config.maxRetries}
-                onChange={(e) => setConfig({ ...config, maxRetries: Number(e.target.value) })}
+                value={config.minAttempts}
+                onChange={(e) => setConfig({ ...config, minAttempts: Number(e.target.value) })}
                 min={1}
-                max={10}
+                max={20}
                 step={1}
               />
               <span className="text-sm text-muted-foreground">次</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              连续无效果时最多重试次数，超过后自动停止
+              至少投放 N 次后才考虑停止托管
+            </p>
+          </div>
+
+          {/* 有效投放比例 */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              有效投放比例
+            </Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                value={config.minSuccessRate}
+                onChange={(e) => setConfig({ ...config, minSuccessRate: Number(e.target.value) })}
+                min={0}
+                max={100}
+                step={5}
+              />
+              <span className="text-sm text-muted-foreground">%</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              起量概率高于此比例时，一直投放不停止
             </p>
           </div>
         </div>

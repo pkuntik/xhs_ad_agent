@@ -3,6 +3,9 @@ import { ObjectId } from 'mongodb'
 // 账号状态
 export type AccountStatus = 'active' | 'inactive' | 'suspended' | 'cookie_expired'
 
+// 登录方式
+export type LoginType = 'cookie' | 'password' | 'qrcode'
+
 // 账号阈值配置
 export interface AccountThresholds {
   minConsumption: number      // 开始检查效果的最低消耗 (默认 100)
@@ -20,6 +23,10 @@ export interface XhsAccount {
   name: string                    // 账号名称/备注
   visitorUserId: string           // 小红书用户 ID (原 userId)
   cookie: string                  // 登录 Cookie (加密存储)
+
+  // 登录信息
+  loginType?: LoginType           // 登录方式
+  loginEmail?: string             // 登录邮箱（账号密码登录时保存）
 
   // 聚光平台信息
   advertiserId: string            // 广告主 ID
@@ -43,10 +50,19 @@ export interface XhsAccount {
   updatedAt: Date
 }
 
-// 创建账号的输入
+// 创建账号的输入（Cookie 方式）
 export interface CreateAccountInput {
   name?: string              // 可选，不填则使用从 Cookie 获取的昵称
   cookie: string
+  dailyBudget?: number
+  defaultBidAmount?: number
+  thresholds?: Partial<AccountThresholds>
+}
+
+// 创建账号的输入（账号密码方式）
+export interface CreateAccountByPasswordInput {
+  email: string
+  password: string
   dailyBudget?: number
   defaultBidAmount?: number
   thresholds?: Partial<AccountThresholds>

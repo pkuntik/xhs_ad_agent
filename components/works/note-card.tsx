@@ -176,6 +176,11 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
       // 正在运行，显示停止确认对话框
       setShowStopDialog(true)
     } else {
+      // 检查是否有关联账号
+      if (!publication.accountId) {
+        toast.error('请先关联账号后再开启托管投放')
+        return
+      }
       // 未运行，显示配置对话框
       setShowConfigDialog(true)
     }
