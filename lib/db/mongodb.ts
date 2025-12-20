@@ -48,4 +48,7 @@ export const COLLECTIONS = {
   USERS: 'users',
   TRANSACTIONS: 'transactions',
   PRICING: 'pricing',
+  // 关联作者和设置
+  LINKED_AUTHORS: 'linked_authors',
+  SETTINGS: 'settings',
 } as const

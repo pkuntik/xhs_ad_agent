@@ -12,9 +12,13 @@ import { Badge } from '@/components/ui/badge'
 import { Loader2, Copy, Check, ExternalLink, Edit2, Save, ArrowLeft, RefreshCw, X } from 'lucide-react'
 import { getWorkById, updateWorkContent, bindPublishedNote, updateWorkImages } from '@/actions/work'
 import { regeneratePlan } from '@/actions/creation'
+import { fetchAndValidateNote } from '@/actions/note'
 import { ImageGenerator } from '@/components/image/ImageGenerator'
-import type { Work } from '@/types/work'
+import { NoteCard } from '@/components/works/note-card'
+import { NoteBindingDialog } from '@/components/works/note-binding-dialog'
+import type { Work, Publication } from '@/types/work'
 import type { GenerationResult } from '@/types/creation'
+import type { NoteDetail, CachedNoteDetail, NoteSnapshot } from '@/types/note'
 
 // 重新生成封面规划的原因选项
 const COVER_REGENERATE_REASONS = [
@@ -74,6 +78,17 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
   // 绑定笔记相关状态
   const [noteUrl, setNoteUrl] = useState('')
   const [binding, setBinding] = useState(false)
+  // 笔记绑定对话框状态
+  const [showBindingDialog, setShowBindingDialog] = useState(false)
+  const [pendingNoteData, setPendingNoteData] = useState<{
+    noteId: string
+    noteUrl: string
+    noteDetail: NoteDetail
+    cachedDetail: CachedNoteDetail
+    snapshot: NoteSnapshot
+    existingAccount?: { _id: string; name: string; visitorUserId: string }
+    linkedAuthor?: { _id: string; nickname: string; userId: string }
+  } | null>(null)
 
   // AI 图片生成相关状态
   const [faceSeed, setFaceSeed] = useState<string | null>(null)
@@ -198,51 +213,96 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     return match ? match[1] : null
   }
 
-  async function handleBindNote() {
+  // 第一步：获取笔记详情并显示确认对话框
+  async function handleFetchNote() {
     if (!work || !noteUrl.trim()) return
-
-    // 提取笔记 ID
-    const newNoteId = extractNoteId(noteUrl.trim())
-    if (!newNoteId) {
-      setError('无效的笔记链接格式')
-      return
-    }
-
-    // 检查是否已存在相同笔记
-    const existingNoteIds = (work.publications || [])
-      .map(pub => extractNoteId(pub.noteUrl))
-      .filter(Boolean)
-
-    if (existingNoteIds.includes(newNoteId)) {
-      setError('该笔记已绑定，请勿重复添加')
-      return
-    }
 
     setBinding(true)
     setError('')
 
     try {
-      const result = await bindPublishedNote(work.publishCode, {
+      const result = await fetchAndValidateNote(noteUrl.trim())
+
+      if (!result.success) {
+        setError(result.error || '获取笔记详情失败')
+        return
+      }
+
+      if (!result.noteId || !result.noteDetail || !result.cachedDetail || !result.snapshot) {
+        setError('笔记数据不完整')
+        return
+      }
+
+      // 检查是否已存在相同笔记
+      const existingNoteIds = (work.publications || [])
+        .map(pub => extractNoteId(pub.noteUrl))
+        .filter(Boolean)
+
+      if (existingNoteIds.includes(result.noteId)) {
+        setError('该笔记已绑定，请勿重复添加')
+        return
+      }
+
+      // 保存数据并显示确认对话框
+      setPendingNoteData({
+        noteId: result.noteId,
         noteUrl: noteUrl.trim(),
-        noteId: newNoteId,
+        noteDetail: result.noteDetail,
+        cachedDetail: result.cachedDetail,
+        snapshot: result.snapshot,
+        existingAccount: result.existingAccount,
+        linkedAuthor: result.linkedAuthor,
+      })
+      setShowBindingDialog(true)
+    } catch (err) {
+      setError('获取笔记详情失败')
+    } finally {
+      setBinding(false)
+    }
+  }
+
+  // 第二步：确认绑定
+  async function handleConfirmBind(options: {
+    noteId: string
+    noteUrl: string
+    noteDetail: CachedNoteDetail
+    snapshot: NoteSnapshot
+    accountId?: string
+  }) {
+    if (!work) return
+
+    setShowBindingDialog(false)
+    setBinding(true)
+    setError('')
+
+    try {
+      const result = await bindPublishedNote(work.publishCode, {
+        noteUrl: options.noteUrl,
+        noteId: options.noteId,
+        accountId: options.accountId,
       })
 
       if (result.success) {
-        // 添加到 publications 列表
-        const newPublication = {
-          noteId: newNoteId,
-          noteUrl: noteUrl.trim(),
+        // 添加到 publications 列表，包含详情和快照
+        const newPublication: Publication = {
+          noteId: options.noteId,
+          noteUrl: options.noteUrl,
+          accountId: options.accountId,
           publishedAt: new Date(),
+          noteDetail: options.noteDetail,
+          snapshots: [options.snapshot],
+          lastSyncAt: new Date(),
         }
         const updatedPublications = [...(work.publications || []), newPublication]
         setWork({
           ...work,
-          noteUrl: noteUrl.trim(),
+          noteUrl: options.noteUrl,
           publications: updatedPublications,
           status: 'published',
         })
         // 清空输入框以便添加更多
         setNoteUrl('')
+        setPendingNoteData(null)
       } else {
         setError(result.error || '绑定失败')
       }
@@ -250,6 +310,25 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
       setError('绑定失败')
     } finally {
       setBinding(false)
+    }
+  }
+
+  // 取消绑定
+  function handleCancelBind() {
+    setShowBindingDialog(false)
+    setPendingNoteData(null)
+  }
+
+  // 刷新作品数据
+  async function refreshWork() {
+    if (!work) return
+    try {
+      const data = await getWorkById(work._id.toString())
+      if (data) {
+        setWork(data)
+      }
+    } catch (err) {
+      console.error('刷新作品数据失败:', err)
     }
   }
 
@@ -908,23 +987,15 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
               <CardHeader>
                 <CardTitle className="text-base">已绑定笔记 ({work.publications.length})</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-3">
                 {work.publications.map((pub, index) => (
-                  <div key={index} className="text-sm break-all p-2 bg-muted/50 rounded">
-                    <a
-                      href={pub.noteUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      {pub.noteUrl}
-                    </a>
-                    {pub.publishedAt && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {new Date(pub.publishedAt).toLocaleString('zh-CN')}
-                      </p>
-                    )}
-                  </div>
+                  <NoteCard
+                    key={index}
+                    publication={pub}
+                    workId={work._id.toString()}
+                    index={index}
+                    onRefresh={refreshWork}
+                  />
                 ))}
               </CardContent>
             </Card>
@@ -951,13 +1022,13 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
               </div>
               <Button
                 className="w-full"
-                onClick={handleBindNote}
+                onClick={handleFetchNote}
                 disabled={binding || !noteUrl.trim()}
               >
                 {binding ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    绑定中...
+                    获取笔记信息...
                   </>
                 ) : (
                   '添加绑定'
@@ -1004,6 +1075,24 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
           )}
         </div>
       </div>
+
+      {/* 笔记绑定确认对话框 */}
+      {pendingNoteData && (
+        <NoteBindingDialog
+          open={showBindingDialog}
+          onOpenChange={setShowBindingDialog}
+          noteUrl={pendingNoteData.noteUrl}
+          noteId={pendingNoteData.noteId}
+          noteDetail={pendingNoteData.noteDetail}
+          cachedDetail={pendingNoteData.cachedDetail}
+          snapshot={pendingNoteData.snapshot}
+          existingAccount={pendingNoteData.existingAccount}
+          linkedAuthor={pendingNoteData.linkedAuthor}
+          workTitle={work.title}
+          onConfirm={handleConfirmBind}
+          onCancel={handleCancelBind}
+        />
+      )}
     </div>
   )
 }

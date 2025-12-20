@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb'
 import type { GenerationResult } from './creation'
+import type { CachedNoteDetail, NoteSnapshot } from './note'
 
 // 作品状态
 export type WorkStatus = 'unused' | 'scanned' | 'published' | 'promoting' | 'paused' | 'archived'
@@ -76,4 +77,14 @@ export interface Publication {
   noteUrl: string                 // 小红书笔记链接
   accountId?: string              // 发布账号 ID
   publishedAt: Date               // 发布时间
+
+  // 缓存的笔记详情
+  noteDetail?: CachedNoteDetail
+
+  // 数据快照（用于趋势分析）
+  snapshots?: NoteSnapshot[]
+
+  // 同步时间
+  lastSyncAt?: Date               // 上次同步时间
+  nextSyncAt?: Date               // 下次计划同步时间
 }

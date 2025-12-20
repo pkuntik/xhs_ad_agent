@@ -3,22 +3,15 @@
     "allow": [
       "Bash(dir:*)",
       "Bash(tree:*)",
-      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\page.tsx\")",
-      "Bash(npx tsc --noEmit)",
       "Bash(cat:*)",
       "Bash(move:*)",
-      "Bash(git checkout:*)",
       "Bash(ls:*)",
       "Bash(find:*)",
       "Bash(grep:*)",
       "Bash(pnpm:*)",
       "Bash(npx:*)",
-      "Bash(git -C \"e:\\2025\\xhs_ad_agent\" log --oneline -20)",
-      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\api\\image\\generate\\route.ts\")",
-      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\api\\image\\generate-prompt\\route.ts\")",
-      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\api\\image\\analyze-reference\\route.ts\")",
-      "Bash(del \"e:\\2025\\xhs_ad_agent\\app\\api\\image\\upload\\route.ts\")",
-      "Bash(cd /d e:2025xhs_ad_agent)"
+      "Bash(git:*)",
+      "Bash(cd:*)"
     ]
   }
 }

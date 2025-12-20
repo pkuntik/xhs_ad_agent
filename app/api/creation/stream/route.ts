@@ -133,7 +133,21 @@ export async function POST(request: Request) {
           controller.close()
         } catch (error: unknown) {
           console.error('流式生成错误:', error)
-          const errorMessage = error instanceof Error ? error.message : '生成失败'
+          // 输出更详细的错误信息用于调试
+          let errorMessage = '生成失败'
+          if (error instanceof Error) {
+            errorMessage = error.message
+            // 检查是否是网络连接错误
+            if (error.message.includes('fetch') || error.message.includes('connect') || error.message.includes('ECONNREFUSED')) {
+              errorMessage = `连接 AI 服务失败: ${error.message}`
+              console.error('网络错误详情:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                cause: (error as Error & { cause?: unknown }).cause,
+              })
+            }
+          }
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: errorMessage })}\n\n`))
           controller.close()
         }

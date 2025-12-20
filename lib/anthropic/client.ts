@@ -12,24 +12,41 @@ export function createAnthropicClient(): Anthropic {
   }
 
   const proxyUrl = process.env.PROXY_URL;
+  const baseURL = process.env.XHS_ANTHROPIC_BASE_URL || process.env.ANTHROPIC_BASE_URL;
+
+  // 调试日志 - 输出当前配置（隐藏敏感信息）
+  console.log('[Anthropic] 客户端配置:', {
+    hasApiKey: !!apiKey,
+    apiKeyPrefix: apiKey.substring(0, 10) + '...',
+    baseURL: baseURL || '(默认)',
+    proxyUrl: proxyUrl ? `${proxyUrl.split('@').pop()}` : '(无代理)',
+  });
 
   // 如果配置了代理，创建自定义 fetch
   const customFetch = proxyUrl
     ? async (url: RequestInfo | URL, init?: RequestInit) => {
-        const dispatcher = new ProxyAgent({
-          uri: proxyUrl,
-          requestTls: { rejectUnauthorized: false },
-        });
-        return undiciFetch(url.toString(), {
-          ...init,
-          dispatcher,
-        } as any) as unknown as Response;
+        console.log('[Anthropic] 使用代理请求:', url.toString().substring(0, 50) + '...');
+        try {
+          const dispatcher = new ProxyAgent({
+            uri: proxyUrl,
+            requestTls: { rejectUnauthorized: false },
+          });
+          const response = await undiciFetch(url.toString(), {
+            ...init,
+            dispatcher,
+          } as any);
+          console.log('[Anthropic] 代理请求成功, status:', response.status);
+          return response as unknown as Response;
+        } catch (err) {
+          console.error('[Anthropic] 代理请求失败:', err);
+          throw err;
+        }
       }
     : undefined;
 
   return new Anthropic({
     apiKey,
-    baseURL: process.env.XHS_ANTHROPIC_BASE_URL || process.env.ANTHROPIC_BASE_URL,
+    baseURL,
     fetch: customFetch,
   });
 }
