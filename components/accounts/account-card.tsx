@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import {
@@ -10,12 +11,15 @@ import {
   Clock,
   User,
   KeyRound,
+  Pin,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AutoManageToggle } from './auto-manage-toggle'
 import { formatMoney } from '@/lib/utils'
+import { toggleAccountPin } from '@/actions/account'
+import { toast } from 'sonner'
 import type { AccountListItem } from '@/types/account'
 
 interface AccountCardProps {
@@ -58,6 +62,9 @@ function formatTimeAgo(date: Date): string {
 }
 
 export function AccountCard({ account }: AccountCardProps) {
+  const [isPinned, setIsPinned] = useState(account.isPinned ?? false)
+  const [pinning, setPinning] = useState(false)
+
   const status = statusMap[account.status] || statusMap.inactive
   const roleLabel = roleTypeMap[account.roleType || 0] || '未知角色'
   const certStatus = certificationMap[account.accountStatusDetail?.certificationState || 0] || certificationMap[0]
@@ -89,8 +96,25 @@ export function AccountCard({ account }: AccountCardProps) {
     issues.push('推广资质异常')
   }
 
+  async function handleTogglePin() {
+    setPinning(true)
+    try {
+      const result = await toggleAccountPin(account._id, !isPinned)
+      if (result.success) {
+        setIsPinned(!isPinned)
+        toast.success(isPinned ? '已取消置顶' : '已置顶')
+      } else {
+        toast.error(result.error || '操作失败')
+      }
+    } catch {
+      toast.error('操作失败')
+    } finally {
+      setPinning(false)
+    }
+  }
+
   return (
-    <Card className={hasIssues ? 'border-orange-200' : ''}>
+    <Card className={`${hasIssues ? 'border-orange-200' : ''} ${isPinned ? 'ring-2 ring-primary/20' : ''}`}>
       <CardHeader className="pb-3">
         <div className="flex items-start gap-3">
           {/* 头像 */}
@@ -119,6 +143,9 @@ export function AccountCard({ account }: AccountCardProps) {
           {/* 名称和状态 */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
+              {isPinned && (
+                <Pin className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+              )}
               <Link
                 href={`/accounts/${account._id}`}
                 className="font-medium text-base hover:text-primary transition-colors truncate"
@@ -145,6 +172,18 @@ export function AccountCard({ account }: AccountCardProps) {
               </span>
             </div>
           </div>
+
+          {/* 置顶按钮 */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 flex-shrink-0"
+            onClick={handleTogglePin}
+            disabled={pinning}
+            title={isPinned ? '取消置顶' : '置顶'}
+          >
+            <Pin className={`h-4 w-4 ${isPinned ? 'text-primary fill-primary' : 'text-muted-foreground'}`} />
+          </Button>
         </div>
 
         {/* 异常警告 */}

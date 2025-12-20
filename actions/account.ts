@@ -5,7 +5,9 @@ import { ObjectId } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { validateCookie } from '@/lib/xhs/auth'
 import { loginWithEmailPassword } from '@/lib/xhs/login'
+import { queryChipsNotes, type ChipsNoteItem, type QueryNotesParams } from '@/lib/xhs/api/chips'
 import type { XhsAccount, AccountListItem, CreateAccountInput, CreateAccountByPasswordInput, AccountThresholds } from '@/types/account'
+import type { RemoteNote, RemoteNoteItem } from '@/types/remote-note'
 import type { User } from '@/types/user'
 import { getCurrentUserId } from '@/lib/auth/session'
 import { deductBalance } from '@/lib/billing/service'
@@ -82,7 +84,7 @@ export async function getAccounts(): Promise<AccountListItem[]> {
     .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
     .find({})
     .project({ cookie: 0 }) // 不返回敏感信息
-    .sort({ createdAt: -1 })
+    .sort({ isPinned: -1, createdAt: -1 }) // 置顶账号优先，然后按创建时间倒序
     .toArray()
 
   // 序列化 ObjectId 和 Date 为客户端可用格式
@@ -370,6 +372,34 @@ export async function toggleAutoManage(
     return { success: true }
   } catch (error) {
     console.error('切换自动托管失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
+ * 切换账号置顶状态
+ */
+export async function toggleAccountPin(
+  id: string,
+  pinned: boolean
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDb()
+
+    await db.collection(COLLECTIONS.ACCOUNTS).updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          isPinned: pinned,
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    revalidatePath('/accounts')
+    return { success: true }
+  } catch (error) {
+    console.error('切换置顶状态失败:', error)
     return { success: false, error: error instanceof Error ? error.message : '未知错误' }
   }
 }
@@ -675,5 +705,224 @@ export async function createAccountByPassword(
   } catch (error) {
     console.error('账号密码方式创建账号失败:', error)
     return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+// 同步结果
+export interface SyncNotesResult {
+  success: boolean
+  error?: string
+  data?: {
+    synced: number      // 同步的笔记数量
+    updated: number     // 更新的笔记数量
+    total: number       // 总笔记数量
+  }
+}
+
+/**
+ * 同步账号的所有笔记（从聚光平台获取并保存到数据库）
+ */
+export async function syncRemoteNotes(accountId: string): Promise<SyncNotesResult> {
+  try {
+    const db = await getDb()
+
+    // 获取账号信息（包含 cookie）
+    const account = await db
+      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+      .findOne({ _id: new ObjectId(accountId) })
+
+    if (!account) {
+      return { success: false, error: '账号不存在' }
+    }
+
+    if (!account.cookie) {
+      return { success: false, error: '账号未配置登录凭证' }
+    }
+
+    if (account.status === 'cookie_expired') {
+      return { success: false, error: 'Cookie 已过期，请重新登录' }
+    }
+
+    const accountObjId = new ObjectId(accountId)
+    const now = new Date()
+    let allNotes: RemoteNote[] = []
+    let page = 1
+    const pageSize = 20
+    let hasMore = true
+
+    // 遍历所有分页获取全部笔记
+    while (hasMore) {
+      const result = await queryChipsNotes(account.cookie, {
+        page,
+        pageSize,
+      })
+
+      if (result.list.length === 0) {
+        hasMore = false
+        break
+      }
+
+      // 转换为数据库格式
+      for (const note of result.list) {
+        allNotes.push({
+          _id: new ObjectId(),
+          accountId: accountObjId,
+          noteId: note.note_id,
+          title: note.note_title || '',
+          coverImage: note.note_image || '',
+          noteType: note.note_type,
+          authorName: note.author_name || '',
+          publishedAt: new Date(note.create_time),
+          reads: note.read || 0,
+          likes: note.likes || 0,
+          comments: note.comments || 0,
+          favorites: note.favorite || 0,
+          canHeat: note.can_heat,
+          cantHeatDesc: note.cant_heat_desc,
+          xsecToken: note.xsec_token || '',
+          syncedAt: now,
+          createdAt: now,
+        })
+      }
+
+      // 检查是否还有更多
+      if (page * pageSize >= result.total) {
+        hasMore = false
+      } else {
+        page++
+        // 防止请求过快
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+    }
+
+    // 批量更新或插入到数据库
+    let updated = 0
+    let inserted = 0
+    const remoteNotesCollection = db.collection<RemoteNote>(COLLECTIONS.REMOTE_NOTES)
+
+    for (const note of allNotes) {
+      const existing = await remoteNotesCollection.findOne({
+        accountId: accountObjId,
+        noteId: note.noteId,
+      })
+
+      if (existing) {
+        // 更新现有记录
+        await remoteNotesCollection.updateOne(
+          { _id: existing._id },
+          {
+            $set: {
+              title: note.title,
+              coverImage: note.coverImage,
+              reads: note.reads,
+              likes: note.likes,
+              comments: note.comments,
+              favorites: note.favorites,
+              canHeat: note.canHeat,
+              cantHeatDesc: note.cantHeatDesc,
+              xsecToken: note.xsecToken,
+              syncedAt: now,
+            },
+          }
+        )
+        updated++
+      } else {
+        // 插入新记录
+        await remoteNotesCollection.insertOne(note)
+        inserted++
+      }
+    }
+
+    // 更新账号的最后同步时间
+    await db.collection(COLLECTIONS.ACCOUNTS).updateOne(
+      { _id: accountObjId },
+      { $set: { lastSyncAt: now, updatedAt: now } }
+    )
+
+    revalidatePath(`/accounts/${accountId}`)
+
+    return {
+      success: true,
+      data: {
+        synced: inserted,
+        updated,
+        total: allNotes.length,
+      },
+    }
+  } catch (error) {
+    console.error('同步远程笔记失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '同步笔记失败',
+    }
+  }
+}
+
+// 获取已同步笔记列表结果
+export interface GetSyncedNotesResult {
+  success: boolean
+  error?: string
+  data?: {
+    list: RemoteNoteItem[]
+    total: number
+    lastSyncAt?: Date
+  }
+}
+
+/**
+ * 获取账号已同步的笔记列表（从数据库）
+ */
+export async function getSyncedNotes(
+  accountId: string,
+  options: { page?: number; pageSize?: number } = {}
+): Promise<GetSyncedNotesResult> {
+  try {
+    const { page = 1, pageSize = 10 } = options
+    const db = await getDb()
+    const accountObjId = new ObjectId(accountId)
+
+    // 获取账号信息（检查最后同步时间）
+    const account = await db
+      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+      .findOne(
+        { _id: accountObjId },
+        { projection: { lastSyncAt: 1 } }
+      )
+
+    // 查询笔记列表
+    const [notes, total] = await Promise.all([
+      db
+        .collection<RemoteNote>(COLLECTIONS.REMOTE_NOTES)
+        .find({ accountId: accountObjId })
+        .sort({ publishedAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .toArray(),
+      db
+        .collection<RemoteNote>(COLLECTIONS.REMOTE_NOTES)
+        .countDocuments({ accountId: accountObjId }),
+    ])
+
+    // 序列化为客户端格式
+    const list: RemoteNoteItem[] = notes.map(note => ({
+      ...note,
+      _id: note._id.toString(),
+      accountId: note.accountId.toString(),
+    }))
+
+    return {
+      success: true,
+      data: {
+        list,
+        total,
+        lastSyncAt: account?.lastSyncAt,
+      },
+    }
+  } catch (error) {
+    console.error('获取已同步笔记失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '获取笔记列表失败',
+    }
   }
 }

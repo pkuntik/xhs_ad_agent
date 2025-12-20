@@ -70,6 +70,7 @@ export interface XhsAccount {
 
   // 状态
   status: AccountStatus
+  isPinned?: boolean              // 是否置顶
   lastSyncAt?: Date               // 最后同步时间
   cookieExpireAt?: Date           // Cookie 过期时间
 

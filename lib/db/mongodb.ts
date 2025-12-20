@@ -50,4 +50,6 @@ export const COLLECTIONS = {
   PRICING: 'pricing',
   // 设置
   SETTINGS: 'settings',
+  // 远程笔记（从聚光平台同步）
+  REMOTE_NOTES: 'remote_notes',
 } as const

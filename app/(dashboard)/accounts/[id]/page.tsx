@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AutoManageToggle } from '@/components/accounts/auto-manage-toggle'
+import { RemoteNotesList } from '@/components/accounts/remote-notes-list'
 import { getAccountById, getAccountStats } from '@/actions/account'
 import { getWorks } from '@/actions/work'
 import { getCampaigns } from '@/actions/campaign'
@@ -131,10 +132,14 @@ export default async function AccountDetailPage({ params }: AccountDetailPagePro
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="works" className="mt-4">
+        <TabsContent value="works" className="mt-4 space-y-4">
+          {/* 平台笔记 */}
+          <RemoteNotesList accountId={id} />
+
+          {/* 已绑定作品 */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">关联作品</CardTitle>
+              <CardTitle className="text-base">已绑定作品</CardTitle>
               <Link href={`/works/new?accountId=${id}`}>
                 <Button size="sm">绑定作品</Button>
               </Link>
