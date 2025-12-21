@@ -8,8 +8,10 @@ const nextConfig: NextConfig = {
   },
   // 让 Vercel serverless 函数包含 prompts 目录
   outputFileTracingIncludes: {
-    '/api/*': ['./prompts/**/*'],
-    '/(dashboard)/*': ['./prompts/**/*'],
+    '/api/**': ['./prompts/**/*'],
+    '/creation': ['./prompts/**/*'],
+    '/creation/**': ['./prompts/**/*'],
+    '/**': ['./prompts/**/*'],
   },
   images: {
     remotePatterns: [

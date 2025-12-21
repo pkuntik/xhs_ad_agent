@@ -2,11 +2,18 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import type { CreationFormData, LearningData } from '@/types/creation';
 
-// 读取小红书生成器提示词
-const XHS_PROMPT = readFileSync(
-  path.join(process.cwd(), 'prompts', '小红书图文内容生成器.md'),
-  'utf-8'
-);
+// 延迟加载提示词（避免模块加载时读取文件）
+let _xhsPrompt: string | null = null;
+
+function getXhsPrompt(): string {
+  if (_xhsPrompt === null) {
+    _xhsPrompt = readFileSync(
+      path.join(process.cwd(), 'prompts', '小红书图文内容生成器.md'),
+      'utf-8'
+    );
+  }
+  return _xhsPrompt;
+}
 
 function buildLearningContext(learningData?: LearningData): string {
   if (!learningData) return '';
@@ -61,7 +68,7 @@ export function buildSystemPrompt() {
     },
     {
       type: "text" as const,
-      text: XHS_PROMPT,
+      text: getXhsPrompt(),
       cache_control: { type: "ephemeral" as const }
     }
   ];
