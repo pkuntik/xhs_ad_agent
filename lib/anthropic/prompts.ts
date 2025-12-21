@@ -78,6 +78,16 @@ export function buildUserMessage(formData: CreationFormData, learningData?: Lear
     `- 推广给谁: ${formData.audienceType}`,
   ];
 
+  // 正文长度要求
+  if (formData.contentLength) {
+    const lengthMap: Record<string, string> = {
+      '短': '200-300字，简洁精炼',
+      '中': '400-600字，内容适中',
+      '长': '800-1000字，深度详尽',
+    };
+    userInfoLines.push(`- 正文长度要求: ${lengthMap[formData.contentLength]}`);
+  }
+
   if (formData.additionalInfo?.trim()) {
     userInfoLines.push(`- 补充说明: ${formData.additionalInfo}`);
   }

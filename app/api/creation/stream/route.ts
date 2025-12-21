@@ -120,13 +120,106 @@ export async function POST(request: Request) {
           // 发送完成进度
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', percent: 100, label: '生成完成！' })}\n\n`))
 
-          // 尝试解析 JSON
+          // 尝试修复和解析 JSON
+          let result = null
+          let parseError = ''
+
+          // 辅助函数：修复 JSON 字符串中的换行符
+          function fixJsonNewlines(text: string): string {
+            let fixed = ''
+            let inString = false
+            let escape = false
+
+            for (let i = 0; i < text.length; i++) {
+              const char = text[i]
+
+              if (escape) {
+                fixed += char
+                escape = false
+                continue
+              }
+
+              if (char === '\\') {
+                escape = true
+                fixed += char
+                continue
+              }
+
+              if (char === '"') {
+                inString = !inString
+                fixed += char
+                continue
+              }
+
+              // 如果在字符串内，将真实换行替换为 \n
+              if (inString && char === '\n') {
+                fixed += '\\n'
+                continue
+              }
+              if (inString && char === '\r') {
+                fixed += '\\r'
+                continue
+              }
+              if (inString && char === '\t') {
+                fixed += '\\t'
+                continue
+              }
+
+              fixed += char
+            }
+            return fixed
+          }
+
           try {
-            const result = JSON.parse(fullText)
+            result = JSON.parse(fullText)
+          } catch (e) {
+            parseError = e instanceof Error ? e.message : 'JSON 解析失败'
+
+            // 尝试修复常见的 JSON 问题
+            try {
+              let fixedText = fullText
+
+              // 移除可能的 markdown 代码块标记
+              fixedText = fixedText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '')
+
+              // 修复字符串内的换行符
+              fixedText = fixJsonNewlines(fixedText)
+
+              // 修复未闭合的字符串（在结尾添加引号）
+              const quoteCount = (fixedText.match(/"/g) || []).length
+              if (quoteCount % 2 !== 0) {
+                fixedText = fixedText + '"'
+              }
+
+              // 修复未闭合的对象/数组
+              const openBraces = (fixedText.match(/{/g) || []).length
+              const closeBraces = (fixedText.match(/}/g) || []).length
+              const openBrackets = (fixedText.match(/\[/g) || []).length
+              const closeBrackets = (fixedText.match(/]/g) || []).length
+
+              // 添加缺失的闭合括号
+              for (let i = 0; i < openBrackets - closeBrackets; i++) {
+                fixedText = fixedText + ']'
+              }
+              for (let i = 0; i < openBraces - closeBraces; i++) {
+                fixedText = fixedText + '}'
+              }
+
+              // 移除末尾的逗号（在 } 或 ] 之前）
+              fixedText = fixedText.replace(/,(\s*[}\]])/g, '$1')
+
+              result = JSON.parse(fixedText)
+              console.log('JSON 修复成功')
+            } catch (e2) {
+              console.error('JSON 修复失败:', parseError, e2 instanceof Error ? e2.message : '')
+            }
+          }
+
+          if (result) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', success: true, result, rawText: fullText })}\n\n`))
-          } catch {
-            // JSON 解析失败，返回原始文本
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', success: true, rawText: fullText })}\n\n`))
+          } else {
+            // JSON 解析失败，返回原始文本和错误信息
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', success: false, rawText: fullText, parseError })}\n\n`))
           }
 
           controller.enqueue(encoder.encode('data: [DONE]\n\n'))

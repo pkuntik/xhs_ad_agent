@@ -26,6 +26,7 @@ import type {
   GenerationResult,
   PromotionGoal,
   ContentScene,
+  ContentLength,
   AudienceType,
 } from '@/types/creation'
 
@@ -48,12 +49,19 @@ const CONTENT_SCENES: ContentScene[] = [
 
 const AUDIENCE_TYPES: AudienceType[] = ['智能推荐', '自定义人群']
 
+const CONTENT_LENGTHS: { value: ContentLength; label: string; desc: string }[] = [
+  { value: '短', label: '短 (50-150字)', desc: '简洁精炼，适合快节奏阅读' },
+  { value: '中', label: '中 (150-300字)', desc: '内容适中，兼顾深度和可读性' },
+  { value: '长', label: '长 (300字以上)', desc: '深度详尽，适合干货教程' },
+]
+
 export default function CreationPage() {
   const router = useRouter()
   const [formData, setFormData] = useState<CreationFormData>({
     promotionGoal: '私信咨询量',
     topic: '',
     contentScene: '引流咨询',
+    contentLength: '中',
     audienceType: '智能推荐',
     customAudience: {
       gender: '不限',
@@ -149,6 +157,10 @@ export default function CreationPage() {
                   setEditedTitle(parsed.result.title?.text || '')
                   setEditedContent(parsed.result.content?.body || '')
                   setEditedTopics(parsed.result.topics?.tags.join(' ') || '')
+                }
+                // 如果解析失败，显示错误信息
+                if (parsed.parseError && !parsed.result) {
+                  setError(`JSON 解析失败: ${parsed.parseError}`)
                 }
               } else if (parsed.type === 'error') {
                 setError(parsed.error || '生成失败')
@@ -346,6 +358,28 @@ export default function CreationPage() {
               </div>
 
               <div className="space-y-2">
+                <Label>正文长度</Label>
+                <Select
+                  value={formData.contentLength || '中'}
+                  onValueChange={(v: string) => setFormData({ ...formData, contentLength: v as ContentLength })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONTENT_LENGTHS.map((len) => (
+                      <SelectItem key={len.value} value={len.value}>
+                        {len.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {CONTENT_LENGTHS.find(l => l.value === (formData.contentLength || '中'))?.desc}
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label>补充说明</Label>
                 <Textarea
                   placeholder="可选：补充产品信息、风格偏好等"
@@ -518,7 +552,12 @@ export default function CreationPage() {
                 <Card>
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-base">标题</CardTitle>
+                      <CardTitle className="text-base">
+                        标题
+                        <span className={`ml-2 text-xs font-normal ${(editedTitle || result.title.text).length > 20 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                          ({(editedTitle || result.title.text).length}/20)
+                        </span>
+                      </CardTitle>
                       {!isEditing && (
                         <Button
                           variant="ghost"
@@ -536,11 +575,17 @@ export default function CreationPage() {
                   </CardHeader>
                   <CardContent>
                     {isEditing ? (
-                      <Input
-                        value={editedTitle}
-                        onChange={(e) => setEditedTitle(e.target.value)}
-                        placeholder="输入标题"
-                      />
+                      <div className="space-y-1">
+                        <Input
+                          value={editedTitle}
+                          onChange={(e) => setEditedTitle(e.target.value)}
+                          placeholder="输入标题（最多20字）"
+                          maxLength={20}
+                        />
+                        {editedTitle.length > 20 && (
+                          <p className="text-xs text-red-500">标题超过20字，发布时会自动截断</p>
+                        )}
+                      </div>
                     ) : (
                       <p className="font-medium">{editedTitle || result.title.text}</p>
                     )}
@@ -780,10 +825,27 @@ export default function CreationPage() {
             </>
           )}
 
-          {!loading && !result && (
+          {!loading && !result && !rawText && (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
                 填写左侧表单并点击"开始生成"
+              </CardContent>
+            </Card>
+          )}
+
+          {/* JSON 解析失败时显示原始输出 */}
+          {!loading && !result && rawText && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base text-orange-600">JSON 解析失败</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  AI 生成的内容格式有误，请查看原始输出并重试
+                </p>
+                <pre className="text-xs whitespace-pre-wrap bg-muted p-4 rounded-md max-h-96 overflow-auto">
+                  {rawText}
+                </pre>
               </CardContent>
             </Card>
           )}

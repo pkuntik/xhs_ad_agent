@@ -16,9 +16,11 @@ interface ContentCardProps {
   onChange?: (value: string) => void
   multiline?: boolean
   showTags?: boolean
+  maxLength?: number  // 最大长度限制
 }
 
 export function ContentCard({
+  type,
   title,
   value,
   placeholder,
@@ -26,7 +28,10 @@ export function ContentCard({
   onChange,
   multiline = false,
   showTags = false,
+  maxLength,
 }: ContentCardProps) {
+  // 标题默认限制20字符
+  const effectiveMaxLength = type === 'title' ? (maxLength ?? 20) : maxLength
   // 内部编辑状态（如果没有外部控制）
   const [internalEditing, setInternalEditing] = useState(false)
   const isEditing = externalEditing !== undefined ? externalEditing : internalEditing
@@ -86,7 +91,14 @@ export function ContentCard({
   return (
     <Card>
       <CardHeader className="pb-2 flex flex-row items-center justify-between">
-        <CardTitle className="text-base">{title}</CardTitle>
+        <CardTitle className="text-base">
+          {title}
+          {effectiveMaxLength && (
+            <span className={`ml-2 text-xs font-normal ${(editedValue || value).length > effectiveMaxLength ? 'text-red-500' : 'text-muted-foreground'}`}>
+              ({(editedValue || value).length}/{effectiveMaxLength})
+            </span>
+          )}
+        </CardTitle>
         <div className="flex items-center gap-1">
           {/* 内部编辑控制按钮 */}
           {hasInternalEditControl && (
@@ -119,11 +131,19 @@ export function ContentCard({
               style={{ height: Math.max(200, (editedValue.split('\n').length + 1) * 24) + 'px' }}
             />
           ) : (
-            <Input
-              value={editedValue}
-              onChange={(e) => handleChange(e.target.value)}
-              placeholder={placeholder}
-            />
+            <div className="space-y-1">
+              <Input
+                value={editedValue}
+                onChange={(e) => handleChange(e.target.value)}
+                placeholder={placeholder}
+                maxLength={effectiveMaxLength}
+              />
+              {effectiveMaxLength && (editedValue || value).length > effectiveMaxLength && (
+                <p className="text-xs text-red-500">
+                  超过{effectiveMaxLength}字，发布时会自动截断
+                </p>
+              )}
+            </div>
           )
         ) : showTags ? (
           renderTags()

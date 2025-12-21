@@ -10,6 +10,8 @@ export type AgeRange = '不限' | '18-23' | '24-30' | '31-40' | '41-50' | '大�
 
 export type ContentScene = '产品种草' | '引流咨询' | '个人IP打造' | '知识干货' | '服务推广';
 
+export type ContentLength = '短' | '中' | '长';
+
 export interface CustomAudience {
   gender: Gender;
   ageRanges: AgeRange[];
@@ -41,6 +43,7 @@ export interface CreationFormData {
   promotionGoal: PromotionGoal;
   topic: string;
   contentScene: ContentScene;
+  contentLength?: ContentLength;  // 正文长度：短(200-300字)、中(400-600字)、长(800-1000字)
   additionalInfo?: string;
   audienceType: AudienceType;
   customAudience?: CustomAudience;

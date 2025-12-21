@@ -115,8 +115,8 @@ export async function publishFromWork(input: PublishFromWorkInput): Promise<Publ
       return { success: false, error: '作品不存在' }
     }
 
-    // 从作品提取发布内容
-    const title = work.draftContent?.title?.text || work.title || ''
+    // 从作品提取发布内容，截断标题到20字符
+    const title = (work.draftContent?.title?.text || work.title || '').slice(0, 20)
     const content = work.draftContent?.content?.body || work.content || ''
 
     // 提取图片 URL
@@ -163,7 +163,9 @@ export async function publishFromWork(input: PublishFromWorkInput): Promise<Publ
  */
 export async function publishNoteToXhs(input: PublishNoteInput): Promise<PublishNoteResult> {
   try {
-    const { accountId, title, content, imageUrls } = input
+    const { accountId, content, imageUrls } = input
+    // 截断标题到20字符
+    const title = input.title.slice(0, 20)
 
     if (!title || title.length === 0) {
       return { success: false, error: '标题不能为空' }

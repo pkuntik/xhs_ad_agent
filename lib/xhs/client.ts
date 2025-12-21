@@ -2,8 +2,8 @@ import { fetch, ProxyAgent, type RequestInit } from 'undici'
 
 const BASE_URL = 'https://ad.xiaohongshu.com'
 
-// Cookie 失效错误码
-const COOKIE_INVALID_CODES = [401, 10001, 10002]
+// Cookie 失效错误码（仅包含认证相关的错误码）
+const COOKIE_INVALID_CODES = [401, 10001, -101, -102]
 
 // 代理配置
 const XHS_PROXY_URL = process.env.XHS_PROXY_URL
