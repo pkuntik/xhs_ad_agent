@@ -245,6 +245,7 @@ export async function POST(request: Request) {
 
           let lastDetectedField = ''
           let currentPercent = 5
+          let inputJsonChunks = 0
 
           // 发送开始进度
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', percent: 5, label: 'AI 开始生成...' })}\n\n`))
@@ -252,6 +253,7 @@ export async function POST(request: Request) {
           // 监听流事件 - Tool Use 模式下监听 input_json_delta
           anthropicStream.on('inputJson', (json) => {
             toolInput += json
+            inputJsonChunks++
 
             // 检测新字段来更新进度
             for (const [field, info] of Object.entries(FIELD_PROGRESS)) {
@@ -266,8 +268,26 @@ export async function POST(request: Request) {
             }
           })
 
+          // 监听错误事件
+          anthropicStream.on('error', (err) => {
+            console.error('Anthropic stream error event:', err)
+            console.error('Error occurred after receiving', inputJsonChunks, 'chunks, total length:', toolInput?.length || 0)
+          })
+
+          // 监听流结束事件
+          anthropicStream.on('end', () => {
+            console.log('Stream end event fired, chunks:', inputJsonChunks, 'total length:', toolInput?.length || 0)
+          })
+
+          // 监听消息事件
+          anthropicStream.on('message', (msg) => {
+            console.log('Stream message event:', msg.stop_reason, 'usage:', JSON.stringify(msg.usage))
+          })
+
           // 等待流完成
+          console.log('等待 finalMessage...')
           const response = await anthropicStream.finalMessage()
+          console.log('finalMessage 完成, stop_reason:', response.stop_reason)
 
           // 发送完成进度
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', percent: 100, label: '生成完成！' })}\n\n`))
@@ -302,11 +322,26 @@ export async function POST(request: Request) {
           controller.close()
         } catch (error: unknown) {
           console.error('流式生成错误:', error)
+          console.error('已收集的 toolInput 长度:', toolInput?.length || 0)
+          console.error('toolInput 最后 200 字符:', toolInput?.slice(-200))
+
           let errorMessage = '生成失败'
+          let isStreamInterrupted = false
+
           if (error instanceof Error) {
             errorMessage = error.message
-            if (error.message.includes('fetch') || error.message.includes('connect') || error.message.includes('ECONNREFUSED')) {
-              errorMessage = `连接 AI 服务失败: ${error.message}`
+            // 检测是否是流中断相关的错误
+            if (error.message.includes('fetch') ||
+                error.message.includes('connect') ||
+                error.message.includes('ECONNREFUSED') ||
+                error.message.includes('network') ||
+                error.message.includes('timeout') ||
+                error.message.includes('aborted') ||
+                error.message.includes('ETIMEDOUT') ||
+                error.message.includes('socket') ||
+                error.message.includes('Unexpected end of JSON')) {
+              isStreamInterrupted = true
+              errorMessage = `AI 服务连接中断: ${error.message}`
               console.error('网络错误详情:', {
                 name: error.name,
                 message: error.message,
@@ -315,12 +350,55 @@ export async function POST(request: Request) {
               })
             }
           }
-          // 返回错误信息，同时包含已收集的原始 JSON（如果有）
+
+          // 尝试从部分数据中恢复
+          const hasPartialData = toolInput && toolInput.length > 100
+          if (hasPartialData) {
+            console.log('尝试解析部分数据...')
+            try {
+              // 尝试直接解析
+              const parsed = JSON.parse(toolInput)
+              console.log('部分数据解析成功!')
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', percent: 100, label: '生成完成（从部分数据恢复）' })}\n\n`))
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', success: true, result: parsed, rawText: toolInput })}\n\n`))
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+              controller.close()
+              return
+            } catch {
+              console.log('直接解析失败，尝试修复 JSON...')
+              // 尝试修复不完整的 JSON（添加缺失的结尾）
+              const fixAttempts = [
+                toolInput + '}',
+                toolInput + '"}',
+                toolInput + '"}]}',
+                toolInput + '"}}',
+                toolInput + ']}}',
+              ]
+              for (const attempt of fixAttempts) {
+                try {
+                  const parsed = JSON.parse(attempt)
+                  console.log('修复后解析成功!')
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', percent: 100, label: '生成完成（数据已修复）' })}\n\n`))
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', success: true, result: parsed, rawText: attempt })}\n\n`))
+                  controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+                  controller.close()
+                  return
+                } catch {
+                  // 继续尝试下一个修复方案
+                }
+              }
+              console.log('所有修复尝试均失败')
+            }
+          }
+
+          // 返回错误信息
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'result',
             success: false,
-            rawText: toolInput || '（未收集到数据）',
-            parseError: errorMessage
+            rawText: hasPartialData ? toolInput : '',
+            parseError: isStreamInterrupted && hasPartialData
+              ? `生成过程中断（已收集 ${toolInput.length} 字符），请重试`
+              : errorMessage
           })}\n\n`))
           controller.close()
         }

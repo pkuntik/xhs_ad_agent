@@ -1,6 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 
+// 流式请求超时时间（10分钟）
+const STREAM_TIMEOUT_MS = 600000;
+
 /**
  * 创建配置好的 Anthropic 客户端
  */
@@ -30,10 +33,14 @@ export function createAnthropicClient(): Anthropic {
           const dispatcher = new ProxyAgent({
             uri: proxyUrl,
             requestTls: { rejectUnauthorized: false },
+            // 增加代理连接超时
+            connectTimeout: 30000,
           });
           const response = await undiciFetch(url.toString(), {
             ...init,
             dispatcher,
+            // 增加请求超时（用于流式响应）
+            signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
           } as any);
           console.log('[Anthropic] 代理请求成功, status:', response.status);
           return response as unknown as Response;
@@ -48,6 +55,7 @@ export function createAnthropicClient(): Anthropic {
     apiKey,
     baseURL,
     fetch: customFetch,
+    timeout: STREAM_TIMEOUT_MS,
     defaultHeaders: {
       "User-Agent": "claude-cli/3.0.0 (external, claude-vscode, agent-sdk/1.0.0)",
       "anthropic-version": "",  // 清空版本头
