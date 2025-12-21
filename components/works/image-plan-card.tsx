@@ -362,12 +362,12 @@ export function ImagePlanCard({
                   </div>
                 </div>
               ) : (
-                <>
-                  <p className="text-muted-foreground">{editedImages[i]?.content || img.content}</p>
+                <div className="space-y-1">
+                  <p><strong>内容：</strong>{editedImages[i]?.content || img.content}</p>
                   {(editedImages[i]?.overlay || img.overlay) && (
-                    <p className="text-muted-foreground mt-1">文字：{editedImages[i]?.overlay || img.overlay}</p>
+                    <p><strong>文字：</strong>{editedImages[i]?.overlay || img.overlay}</p>
                   )}
-                </>
+                </div>
               )}
             </div>
           </div>

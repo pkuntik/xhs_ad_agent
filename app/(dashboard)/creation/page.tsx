@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
@@ -16,10 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Sparkles, Copy, Check, Save, Edit2 } from 'lucide-react'
+import { Loader2, Sparkles, Save } from 'lucide-react'
 import { saveWork } from '@/actions/work'
 import { ImageGenerator } from '@/components/image/ImageGenerator'
 import { CustomAudienceSelector } from '@/components/form/CustomAudienceSelector'
+import { ContentCard } from '@/components/works/content-card'
 import { processImageUrl } from '@/lib/utils/image'
 import type {
   CreationFormData,
@@ -82,8 +82,6 @@ export default function CreationPage() {
   const [result, setResult] = useState<GenerationResult | null>(null)
   const [rawText, setRawText] = useState('')
   const [error, setError] = useState('')
-  const [copied, setCopied] = useState<string | null>(null)
-  const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // 进度条状态
@@ -108,7 +106,6 @@ export default function CreationPage() {
     setError('')
     setResult(null)
     setRawText('')
-    setIsEditing(false)
     setProgress(0)
     setProgressLabel('正在连接...')
 
@@ -181,19 +178,6 @@ export default function CreationPage() {
     }
   }
 
-  function startEditing() {
-    if (result) {
-      setEditedTitle(result.title?.text || '')
-      setEditedContent(result.content?.body || '')
-      setEditedTopics(result.topics?.tags.join(' ') || '')
-      setIsEditing(true)
-    }
-  }
-
-  function cancelEditing() {
-    setIsEditing(false)
-  }
-
   async function handleSave() {
     if (!result) return
 
@@ -257,12 +241,6 @@ export default function CreationPage() {
     } finally {
       setSaving(false)
     }
-  }
-
-  function handleCopy(text: string, key: string) {
-    navigator.clipboard.writeText(text)
-    setCopied(key)
-    setTimeout(() => setCopied(null), 2000)
   }
 
   // 封面图片生成回调
@@ -497,184 +475,61 @@ export default function CreationPage() {
               {/* 操作按钮栏 */}
               <Card>
                 <CardContent className="py-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      {isEditing ? '编辑模式' : '预览模式'}
-                    </span>
-                    <div className="flex gap-2">
-                      {isEditing ? (
+                  <div className="flex items-center justify-end">
+                    <Button size="sm" onClick={handleSave} disabled={saving}>
+                      {saving ? (
                         <>
-                          <Button variant="outline" size="sm" onClick={cancelEditing}>
-                            取消
-                          </Button>
-                          <Button size="sm" onClick={handleSave} disabled={saving}>
-                            {saving ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                保存中...
-                              </>
-                            ) : (
-                              <>
-                                <Save className="mr-2 h-4 w-4" />
-                                保存到作品中心
-                              </>
-                            )}
-                          </Button>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          保存中...
                         </>
                       ) : (
                         <>
-                          <Button variant="outline" size="sm" onClick={startEditing}>
-                            <Edit2 className="mr-2 h-4 w-4" />
-                            编辑
-                          </Button>
-                          <Button size="sm" onClick={handleSave} disabled={saving}>
-                            {saving ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                保存中...
-                              </>
-                            ) : (
-                              <>
-                                <Save className="mr-2 h-4 w-4" />
-                                保存到作品中心
-                              </>
-                            )}
-                          </Button>
+                          <Save className="mr-2 h-4 w-4" />
+                          保存到作品中心
                         </>
                       )}
-                    </div>
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
 
               {/* 标题 */}
               {result.title && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-base">
-                        标题
-                        <span className={`ml-2 text-xs font-normal ${(editedTitle || result.title.text).length > 20 ? 'text-red-500' : 'text-muted-foreground'}`}>
-                          ({(editedTitle || result.title.text).length}/20)
-                        </span>
-                      </CardTitle>
-                      {!isEditing && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCopy(editedTitle || result.title!.text, 'title')}
-                        >
-                          {copied === 'title' ? (
-                            <Check className="h-4 w-4" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {isEditing ? (
-                      <div className="space-y-1">
-                        <Input
-                          value={editedTitle}
-                          onChange={(e) => setEditedTitle(e.target.value)}
-                          placeholder="输入标题（最多20字）"
-                          maxLength={20}
-                        />
-                        {editedTitle.length > 20 && (
-                          <p className="text-xs text-red-500">标题超过20字，发布时会自动截断</p>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="font-medium">{editedTitle || result.title.text}</p>
-                    )}
-                  </CardContent>
-                </Card>
+                <ContentCard
+                  type="title"
+                  title="标题"
+                  value={editedTitle}
+                  placeholder="输入标题（最多20字）"
+                  onChange={setEditedTitle}
+                  showCopy
+                />
               )}
 
               {/* 正文 */}
               {result.content && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-base">
-                        正文 ({(editedContent || result.content.body).length} 字)
-                      </CardTitle>
-                      {!isEditing && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCopy(editedContent || result.content!.body, 'content')}
-                        >
-                          {copied === 'content' ? (
-                            <Check className="h-4 w-4" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {isEditing ? (
-                      <Textarea
-                        value={editedContent}
-                        onChange={(e) => setEditedContent(e.target.value)}
-                        placeholder="输入正文内容"
-                        rows={10}
-                      />
-                    ) : (
-                      <div className="whitespace-pre-wrap text-sm">
-                        {editedContent || result.content.body}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                <ContentCard
+                  type="content"
+                  title="正文"
+                  value={editedContent}
+                  placeholder="输入正文内容"
+                  onChange={setEditedContent}
+                  multiline
+                  showCopy
+                  showWordCount
+                />
               )}
 
               {/* 话题标签 */}
               {result.topics && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-base">话题标签</CardTitle>
-                      {!isEditing && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCopy(editedTopics || result.topics!.tags.join(' '), 'topics')}
-                        >
-                          {copied === 'topics' ? (
-                            <Check className="h-4 w-4" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {isEditing ? (
-                      <Input
-                        value={editedTopics}
-                        onChange={(e) => setEditedTopics(e.target.value)}
-                        placeholder="输入话题标签，空格分隔"
-                      />
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {(editedTopics || result.topics.tags.join(' ')).split(/\s+/).filter(Boolean).map((tag, i) => (
-                          <span
-                            key={i}
-                            className="px-2 py-1 bg-primary/10 text-primary rounded-full text-sm"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                <ContentCard
+                  type="topics"
+                  title="话题标签"
+                  value={editedTopics}
+                  placeholder="输入话题标签，空格分隔"
+                  onChange={setEditedTopics}
+                  showTags
+                  showCopy
+                />
               )}
 
               {/* 封面规划 */}

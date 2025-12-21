@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Edit2 } from 'lucide-react'
+import { Edit2, Copy, Check, Loader2 } from 'lucide-react'
 
 interface ContentCardProps {
   type: 'title' | 'content' | 'topics'
@@ -14,9 +14,12 @@ interface ContentCardProps {
   placeholder?: string
   isEditing?: boolean
   onChange?: (value: string) => void
+  onSave?: (value: string) => Promise<void>  // 保存回调，确认编辑时调用
   multiline?: boolean
   showTags?: boolean
   maxLength?: number  // 最大长度限制
+  showCopy?: boolean  // 是否显示复制按钮
+  showWordCount?: boolean  // 是否显示字数（用于正文）
 }
 
 export function ContentCard({
@@ -26,9 +29,12 @@ export function ContentCard({
   placeholder,
   isEditing: externalEditing,
   onChange,
+  onSave,
   multiline = false,
   showTags = false,
   maxLength,
+  showCopy = false,
+  showWordCount = false,
 }: ContentCardProps) {
   // 标题默认限制20字符
   const effectiveMaxLength = type === 'title' ? (maxLength ?? 20) : maxLength
@@ -40,6 +46,12 @@ export function ContentCard({
   // 编辑状态
   const [editedValue, setEditedValue] = useState(value)
 
+  // 复制状态
+  const [copied, setCopied] = useState(false)
+
+  // 保存状态
+  const [saving, setSaving] = useState(false)
+
   // 开始编辑
   function startEditing() {
     setEditedValue(value)
@@ -47,9 +59,17 @@ export function ContentCard({
   }
 
   // 保存编辑
-  function saveEditing() {
+  async function saveEditing() {
     if (onChange) {
       onChange(editedValue)
+    }
+    if (onSave) {
+      setSaving(true)
+      try {
+        await onSave(editedValue)
+      } finally {
+        setSaving(false)
+      }
     }
     setInternalEditing(false)
   }
@@ -66,6 +86,16 @@ export function ContentCard({
     if (externalEditing !== undefined && onChange) {
       onChange(newValue)
     }
+  }
+
+  // 复制内容
+  function handleCopy() {
+    const textToCopy = showTags
+      ? (editedValue || value).split(/\s+/).filter(Boolean).join(' ')
+      : (editedValue || value)
+    navigator.clipboard.writeText(textToCopy)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   // 渲染标签
@@ -88,11 +118,16 @@ export function ContentCard({
     )
   }
 
+  // 计算显示的标题（可能包含字数）
+  const displayTitle = showWordCount
+    ? `${title} (${(editedValue || value).length} 字)`
+    : title
+
   return (
-    <Card>
+    <Card className="group">
       <CardHeader className="pb-2 flex flex-row items-center justify-between">
         <CardTitle className="text-base">
-          {title}
+          {displayTitle}
           {effectiveMaxLength && (
             <span className={`ml-2 text-xs font-normal ${(editedValue || value).length > effectiveMaxLength ? 'text-red-500' : 'text-muted-foreground'}`}>
               ({(editedValue || value).length}/{effectiveMaxLength})
@@ -104,17 +139,30 @@ export function ContentCard({
           {hasInternalEditControl && (
             isEditing ? (
               <>
-                <Button variant="ghost" size="sm" onClick={cancelEditing}>
+                <Button variant="ghost" size="sm" onClick={cancelEditing} disabled={saving}>
                   取消
                 </Button>
-                <Button size="sm" onClick={saveEditing}>
-                  保存
+                <Button variant="ghost" size="sm" onClick={saveEditing} disabled={saving}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 </Button>
               </>
             ) : (
-              <Button variant="ghost" size="sm" onClick={startEditing} title="编辑">
-                <Edit2 className="h-4 w-4" />
-              </Button>
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={startEditing}
+                  title="编辑"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Edit2 className="h-4 w-4" />
+                </Button>
+                {showCopy && (
+                  <Button variant="ghost" size="sm" onClick={handleCopy} title="复制">
+                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                )}
+              </>
             )
           )}
         </div>

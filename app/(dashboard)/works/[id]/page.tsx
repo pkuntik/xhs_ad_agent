@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Copy, Check, ExternalLink, Edit2, Save, ArrowLeft } from 'lucide-react'
+import { Loader2, Copy, Check, ExternalLink, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { getWorkById, updateWorkContent, bindPublishedNote, updateWorkImages } from '@/actions/work'
 import { fetchAndValidateNote } from '@/actions/note'
@@ -36,10 +36,6 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
-
-  // 全局编辑模式
-  const [isEditing, setIsEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
 
   // 编辑状态
   const [editedTitle, setEditedTitle] = useState('')
@@ -95,35 +91,70 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     setTimeout(() => setCopied(false), 2000)
   }
 
-  async function handleSave() {
+  // 保存标题
+  async function handleSaveTitle(newTitle: string) {
     if (!work) return
-    setSaving(true)
     setError('')
-
     try {
       const result = await updateWorkContent(work._id.toString(), {
-        title: editedTitle,
+        title: newTitle,
         content: editedContent,
         tags: editedTopics.split(/\s+/).filter(Boolean),
         draftContent: draftContent || undefined,
       })
-
       if (result.success) {
-        setWork({
-          ...work,
-          title: editedTitle,
-          content: editedContent,
-          tags: editedTopics.split(/\s+/).filter(Boolean),
-          draftContent: draftContent || work.draftContent,
-        })
-        setIsEditing(false)
+        setWork({ ...work, title: newTitle })
+        toast.success('标题已保存')
       } else {
         setError(result.error || '保存失败')
       }
     } catch {
       setError('保存失败')
-    } finally {
-      setSaving(false)
+    }
+  }
+
+  // 保存正文
+  async function handleSaveContent(newContent: string) {
+    if (!work) return
+    setError('')
+    try {
+      const result = await updateWorkContent(work._id.toString(), {
+        title: editedTitle,
+        content: newContent,
+        tags: editedTopics.split(/\s+/).filter(Boolean),
+        draftContent: draftContent || undefined,
+      })
+      if (result.success) {
+        setWork({ ...work, content: newContent })
+        toast.success('正文已保存')
+      } else {
+        setError(result.error || '保存失败')
+      }
+    } catch {
+      setError('保存失败')
+    }
+  }
+
+  // 保存话题标签
+  async function handleSaveTopics(newTopics: string) {
+    if (!work) return
+    setError('')
+    const tags = newTopics.split(/\s+/).filter(Boolean)
+    try {
+      const result = await updateWorkContent(work._id.toString(), {
+        title: editedTitle,
+        content: editedContent,
+        tags,
+        draftContent: draftContent || undefined,
+      })
+      if (result.success) {
+        setWork({ ...work, tags })
+        toast.success('话题标签已保存')
+      } else {
+        setError(result.error || '保存失败')
+      }
+    } catch {
+      setError('保存失败')
     }
   }
 
@@ -322,38 +353,18 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">{work.title}</h2>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant={status.variant}>{status.label}</Badge>
-              <span className="text-sm text-muted-foreground">
-                发布码: {work.publishCode}
-              </span>
-            </div>
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">{work.title}</h2>
+          <div className="flex items-center gap-2 mt-1">
+            <Badge variant={status.variant}>{status.label}</Badge>
+            <span className="text-sm text-muted-foreground">
+              发布码: {work.publishCode}
+            </span>
           </div>
-        </div>
-        <div className="flex gap-2">
-          {isEditing ? (
-            <>
-              <Button variant="outline" onClick={() => setIsEditing(false)}>
-                取消
-              </Button>
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                保存全部
-              </Button>
-            </>
-          ) : (
-            <Button variant="outline" onClick={() => setIsEditing(true)}>
-              <Edit2 className="mr-2 h-4 w-4" />
-              编辑全部
-            </Button>
-          )}
         </div>
       </div>
 
@@ -372,8 +383,8 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
             title="标题"
             value={editedTitle}
             placeholder="输入标题"
-            isEditing={isEditing}
             onChange={setEditedTitle}
+            onSave={handleSaveTitle}
           />
 
           {/* 正文 */}
@@ -382,8 +393,8 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
             title="正文内容"
             value={editedContent}
             placeholder="输入正文内容"
-            isEditing={isEditing}
             onChange={setEditedContent}
+            onSave={handleSaveContent}
             multiline
           />
 
@@ -393,16 +404,15 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
             title="话题标签"
             value={editedTopics}
             placeholder="输入话题标签，空格分隔"
-            isEditing={isEditing}
             onChange={setEditedTopics}
-            showTags={!isEditing}
+            onSave={handleSaveTopics}
+            showTags
           />
 
           {/* 封面规划 */}
           {draftContent?.cover && (
             <CoverPlanCard
               draftContent={draftContent}
-              isEditing={isEditing}
               onContentChange={handleContentChange}
               onImageGenerated={handleCoverImageGenerated}
               faceSeed={faceSeed || undefined}
@@ -415,7 +425,6 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
           {draftContent?.images && draftContent.images.length > 0 && (
             <ImagePlanCard
               draftContent={draftContent}
-              isEditing={isEditing}
               onContentChange={handleContentChange}
               onImageGenerated={handleImageGenerated}
               faceSeed={faceSeed || undefined}
