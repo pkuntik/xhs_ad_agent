@@ -363,51 +363,54 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
             </CardContent>
           </Card>
 
-          {/* 发布按钮 */}
-          {!published && (
-            <>
-              {!isMobile && (
-                <Card className="border-orange-200 bg-orange-50">
-                  <CardContent className="pt-4">
-                    <div className="flex items-center gap-2 text-orange-700 mb-2">
-                      <Smartphone className="h-5 w-5" />
-                      <span className="font-medium">请在手机上打开此页面</span>
-                    </div>
-                    <p className="text-sm text-orange-600">
-                      小红书 SDK 仅支持移动端，请使用手机扫码访问此页面后发布
-                    </p>
-                  </CardContent>
-                </Card>
+          {/* 发布按钮 - 始终显示，允许多次发布 */}
+          <>
+            {!isMobile && (
+              <Card className="border-orange-200 bg-orange-50">
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-2 text-orange-700 mb-2">
+                    <Smartphone className="h-5 w-5" />
+                    <span className="font-medium">请在手机上打开此页面</span>
+                  </div>
+                  <p className="text-sm text-orange-600">
+                    小红书 SDK 仅支持移动端，请使用手机扫码访问此页面后发布
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+            <Button
+              className="w-full h-12 text-lg bg-pink-500 hover:bg-pink-600"
+              onClick={handlePublish}
+              disabled={publishing || !sdkLoaded || !isMobile}
+            >
+              {publishing ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  正在唤起小红书...
+                </>
+              ) : !isMobile ? (
+                <>
+                  <Smartphone className="mr-2 h-5 w-5" />
+                  请在手机上打开
+                </>
+              ) : !sdkLoaded ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  加载中...
+                </>
+              ) : published ? (
+                <>
+                  <Send className="mr-2 h-5 w-5" />
+                  再次发布到小红书
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-5 w-5" />
+                  发布到小红书
+                </>
               )}
-              <Button
-                className="w-full h-12 text-lg bg-pink-500 hover:bg-pink-600"
-                onClick={handlePublish}
-                disabled={publishing || !sdkLoaded || !isMobile}
-              >
-                {publishing ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    正在唤起小红书...
-                  </>
-                ) : !isMobile ? (
-                  <>
-                    <Smartphone className="mr-2 h-5 w-5" />
-                    请在手机上打开
-                  </>
-                ) : !sdkLoaded ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    加载中...
-                  </>
-                ) : (
-                  <>
-                    <Send className="mr-2 h-5 w-5" />
-                    发布到小红书
-                  </>
-                )}
-              </Button>
-            </>
-          )}
+            </Button>
+          </>
 
           {/* 发布成功提示 */}
           {published && publications.length === 0 && !showAddMore && (
@@ -476,26 +479,35 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
 
           {/* 已绑定的笔记列表 */}
           {publications.length > 0 && !showAddMore && (
-            <Card className="border-green-200 bg-green-50">
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2 text-green-700 mb-3">
-                  <CheckCircle className="h-5 w-5" />
-                  <span className="font-medium">已绑定 {publications.length} 个笔记</span>
-                </div>
-                <div className="space-y-2 mb-4">
-                  {publications.map((pub, index) => (
-                    <a
-                      key={index}
-                      href={pub.noteUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-sm text-pink-600 hover:text-pink-700 hover:underline"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      笔记 {index + 1}
-                    </a>
-                  ))}
-                </div>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  已绑定笔记 ({publications.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {publications.map((pub, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <a
+                        href={pub.noteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-pink-600 hover:text-pink-700 font-medium"
+                      >
+                        <ExternalLink className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">笔记 {index + 1}</span>
+                      </a>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        绑定于 {new Date(pub.publishedAt).toLocaleString('zh-CN')}
+                      </p>
+                    </div>
+                  </div>
+                ))}
                 <Button
                   variant="outline"
                   size="sm"
