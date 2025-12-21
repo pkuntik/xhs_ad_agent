@@ -2,12 +2,13 @@ import { ObjectId } from 'mongodb'
 
 // 任务类型
 export type TaskType =
-  | 'sync_account'        // 同步账号数据
-  | 'check_campaign'      // 检查投放效果
-  | 'create_campaign'     // 创建投放计划
-  | 'pause_campaign'      // 暂停计划
-  | 'restart_campaign'    // 重启计划
-  | 'switch_work'         // 切换作品
+  | 'sync_account'            // 同步账号数据
+  | 'check_campaign'          // 检查投放效果
+  | 'check_managed_campaign'  // 检查托管投放效果（两阶段检查）
+  | 'create_campaign'         // 创建投放计划
+  | 'pause_campaign'          // 暂停计划
+  | 'restart_campaign'        // 重启计划
+  | 'switch_work'             // 切换作品
 
 // 任务状态
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed'

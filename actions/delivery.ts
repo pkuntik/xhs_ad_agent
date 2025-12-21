@@ -865,3 +865,309 @@ export async function markFollowerAdded(
     return { success: false, error: error instanceof Error ? error.message : '未知错误' }
   }
 }
+
+/**
+ * 检查托管投放效果（两阶段检查）
+ *
+ * 阶段1（消耗 >= threshold1）：检查是否有私信咨询
+ * 阶段2（消耗 >= threshold2）：检查是否有企微加粉
+ *
+ * 如果两个阶段都没有效果，终止当前投放并重新创建
+ */
+export async function checkManagedCampaign(
+  campaignId: string,
+  workId: string,
+  publicationIndex: number,
+  params: Record<string, unknown>
+): Promise<{ decision: DeliveryDecision; reason: string }> {
+  const db = await getDb()
+
+  const checkThreshold1 = (params.checkThreshold1 as number) || 60
+  const checkThreshold2 = (params.checkThreshold2 as number) || 120
+  const minAttempts = (params.minAttempts as number) || 3
+  const minSuccessRate = (params.minSuccessRate as number) || 30
+
+  // 获取计划信息
+  const campaign = await db
+    .collection<Campaign>(COLLECTIONS.CAMPAIGNS)
+    .findOne({ _id: new ObjectId(campaignId) })
+  if (!campaign) {
+    throw new Error('计划不存在')
+  }
+
+  // 获取作品和 Publication 信息
+  const work = await db
+    .collection<Work>(COLLECTIONS.WORKS)
+    .findOne({ _id: new ObjectId(workId) })
+  if (!work) {
+    throw new Error('作品不存在')
+  }
+  if (!work.publications || !work.publications[publicationIndex]) {
+    throw new Error('笔记不存在')
+  }
+
+  const publication = work.publications[publicationIndex]
+  const stats = publication.deliveryStats || INITIAL_DELIVERY_STATS
+
+  // 检查托管状态
+  if (publication.deliveryStatus !== 'running') {
+    return { decision: 'pause', reason: '托管投放已关闭' }
+  }
+
+  // 获取账号信息
+  if (!publication.accountId) {
+    throw new Error('笔记未关联账号')
+  }
+
+  const account = await db
+    .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+    .findOne({ _id: new ObjectId(publication.accountId) })
+  if (!account) {
+    throw new Error('账号不存在')
+  }
+  if (!account.cookie || !account.advertiserId) {
+    throw new Error('账号未完成配置')
+  }
+
+  // 获取投放数据报表
+  let reportData = {
+    spent: 0,
+    impressions: 0,
+    clicks: 0,
+    ctr: 0,
+    leads: 0,
+    costPerLead: 0,
+  }
+
+  try {
+    reportData = await reportApi.getReportData({
+      cookie: account.cookie,
+      advertiserId: account.advertiserId,
+      campaignId: campaign.campaignId,
+      startDate: campaign.batchStartAt,
+      endDate: new Date(),
+    })
+  } catch (apiError) {
+    console.warn('报表 API 未实现，使用模拟数据')
+  }
+
+  // 创建日志基础数据
+  const logEntry: Omit<DeliveryLog, '_id'> = {
+    accountId: new ObjectId(publication.accountId),
+    workId: new ObjectId(workId),
+    campaignId: campaign._id,
+    publicationIndex,
+    periodStart: campaign.batchStartAt,
+    periodEnd: new Date(),
+    spent: reportData.spent,
+    impressions: reportData.impressions,
+    clicks: reportData.clicks,
+    ctr: reportData.ctr,
+    leads: reportData.leads,
+    costPerLead: reportData.leads > 0 ? reportData.spent / reportData.leads : 0,
+    conversionRate: reportData.clicks > 0 ? reportData.leads / reportData.clicks : 0,
+    isEffective: false,
+    decision: 'continue',
+    decisionReason: '',
+    createdAt: new Date(),
+  }
+
+  // 阶段判断
+  let checkStage: 1 | 2 = 1
+  if (reportData.spent >= checkThreshold2) {
+    checkStage = 2
+  } else if (reportData.spent >= checkThreshold1) {
+    checkStage = 1
+  } else {
+    // 消耗未达到阈值，继续监控
+    logEntry.decision = 'continue'
+    logEntry.decisionReason = '消耗未达到检查阈值，继续监控'
+    logEntry.checkStage = 1
+
+    await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
+    await scheduleManagedCheck(db, campaignId, workId, publicationIndex, params, 30)
+
+    return { decision: 'continue', reason: '消耗未达到检查阈值' }
+  }
+
+  logEntry.checkStage = checkStage
+
+  // 阶段1检查：是否有咨询
+  if (checkStage === 1) {
+    if (reportData.leads > 0) {
+      // 有咨询，效果达标
+      logEntry.isEffective = true
+      logEntry.decision = 'continue'
+      logEntry.decisionReason = `阶段1有效：${reportData.leads}个咨询`
+
+      await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
+      await scheduleManagedCheck(db, campaignId, workId, publicationIndex, params, 60)
+
+      return { decision: 'continue', reason: '阶段1：有咨询，继续投放' }
+    }
+
+    // 无咨询，继续到阶段2检查
+    logEntry.decision = 'continue'
+    logEntry.decisionReason = '阶段1无咨询，等待阶段2检查'
+
+    await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
+    await scheduleManagedCheck(db, campaignId, workId, publicationIndex, params, 30)
+
+    return { decision: 'continue', reason: '阶段1：无咨询，等待阶段2' }
+  }
+
+  // 阶段2检查：是否有加粉
+  // 查询最近的加粉记录
+  const recentFollowerLog = await db
+    .collection<DeliveryLog>(COLLECTIONS.DELIVERY_LOGS)
+    .findOne({
+      workId: new ObjectId(workId),
+      publicationIndex,
+      hasFollower: true,
+      createdAt: { $gte: campaign.batchStartAt },
+    })
+
+  const hasFollower = !!recentFollowerLog
+  logEntry.hasFollower = hasFollower
+
+  if (hasFollower || reportData.leads > 0) {
+    // 有加粉或有咨询，本次投放成功
+    logEntry.isEffective = true
+    logEntry.decision = 'continue'
+    logEntry.decisionReason = hasFollower
+      ? `阶段2有效：有企微加粉`
+      : `阶段2有效：${reportData.leads}个咨询`
+
+    await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
+
+    // 更新统计
+    await updateDeliveryStats(db, workId, publicationIndex, {
+      totalSpent: stats.totalSpent + reportData.spent,
+      successfulAttempts: stats.successfulAttempts + 1,
+    })
+
+    await scheduleManagedCheck(db, campaignId, workId, publicationIndex, params, 60)
+
+    return { decision: 'continue', reason: '阶段2：有效果，继续投放' }
+  }
+
+  // 阶段2无效果，需要判断是否重投
+  logEntry.isEffective = false
+  logEntry.decision = 'restart'
+  logEntry.decisionReason = '阶段2无效果（无咨询、无加粉），终止并重投'
+
+  await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
+
+  // 暂停当前计划
+  try {
+    await campaignApi.pauseCampaign({
+      cookie: account.cookie,
+      campaignId: campaign.campaignId,
+    })
+  } catch (e) {
+    console.warn('暂停计划 API 调用失败:', e)
+  }
+
+  await db.collection(COLLECTIONS.CAMPAIGNS).updateOne(
+    { _id: campaign._id },
+    { $set: { status: 'paused', updatedAt: new Date() } }
+  )
+
+  // 更新统计
+  const newTotalAttempts = stats.totalAttempts
+  const newSuccessRate = newTotalAttempts > 0
+    ? (stats.successfulAttempts / newTotalAttempts) * 100
+    : 0
+  const newAvgSpent = newTotalAttempts > 0
+    ? (stats.totalSpent + reportData.spent) / newTotalAttempts
+    : 0
+
+  await updateDeliveryStats(db, workId, publicationIndex, {
+    totalSpent: stats.totalSpent + reportData.spent,
+    avgSpentPerAttempt: newAvgSpent,
+    successRate: newSuccessRate,
+  })
+
+  // 判断是否继续重投
+  const shouldContinue =
+    stats.totalAttempts < minAttempts ||
+    newSuccessRate >= minSuccessRate
+
+  if (!shouldContinue) {
+    // 达到最小次数且起量率低，停止托管
+    await db.collection(COLLECTIONS.WORKS).updateOne(
+      { _id: new ObjectId(workId) },
+      {
+        $set: {
+          [`publications.${publicationIndex}.deliveryStatus`]: 'stopped',
+          [`publications.${publicationIndex}.deliveryConfig.enabled`]: false,
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    return {
+      decision: 'pause',
+      reason: `投放${stats.totalAttempts}次，起量率${newSuccessRate.toFixed(1)}%低于${minSuccessRate}%，停止托管`,
+    }
+  }
+
+  // 创建新的投放计划
+  await startManagedDelivery(workId, publicationIndex)
+
+  return { decision: 'restart', reason: '效果不佳，已创建新的投放计划' }
+}
+
+/**
+ * 更新投放统计
+ */
+async function updateDeliveryStats(
+  db: Db,
+  workId: string,
+  publicationIndex: number,
+  updates: Partial<DeliveryStats>
+) {
+  const setFields: Record<string, unknown> = { updatedAt: new Date() }
+
+  for (const [key, value] of Object.entries(updates)) {
+    setFields[`publications.${publicationIndex}.deliveryStats.${key}`] = value
+  }
+
+  await db.collection(COLLECTIONS.WORKS).updateOne(
+    { _id: new ObjectId(workId) },
+    { $set: setFields }
+  )
+}
+
+/**
+ * 安排下次托管检查
+ */
+async function scheduleManagedCheck(
+  db: Db,
+  campaignId: string,
+  workId: string,
+  publicationIndex: number,
+  params: Record<string, unknown>,
+  minutesLater: number
+) {
+  const campaign = await db
+    .collection<Campaign>(COLLECTIONS.CAMPAIGNS)
+    .findOne({ _id: new ObjectId(campaignId) })
+
+  if (campaign) {
+    await db.collection(COLLECTIONS.TASKS).insertOne({
+      type: 'check_managed_campaign',
+      accountId: campaign.accountId,
+      workId: new ObjectId(workId),
+      campaignId: new ObjectId(campaignId),
+      publicationIndex,
+      status: 'pending',
+      priority: 2,
+      scheduledAt: new Date(Date.now() + minutesLater * 60 * 1000),
+      params,
+      retryCount: 0,
+      maxRetries: 3,
+      createdAt: new Date(),
+    })
+  }
+}

@@ -59,6 +59,28 @@ interface ImageGeneratorProps {
   compact?: boolean  // 紧凑模式，图片和按钮更小
 }
 
+// 移除 context 中的 base64 图片数据，避免 Server Action body 超限
+// 只过滤 base64 格式的 imageUrl，保留其他所有字段
+function stripBase64Images(ctx: ImageGenerationContext | undefined): ImageGenerationContext | undefined {
+  if (!ctx) return ctx
+
+  const isBase64 = (url?: string) => url?.startsWith('data:')
+
+  return {
+    ...ctx,
+    // 过滤 cover 中的 base64 图片
+    cover: ctx.cover ? {
+      ...ctx.cover,
+      imageUrl: isBase64(ctx.cover.imageUrl) ? undefined : ctx.cover.imageUrl,
+    } : undefined,
+    // 过滤 allImages 中的 base64 图片
+    allImages: ctx.allImages?.map(img => ({
+      ...img,
+      imageUrl: isBase64(img.imageUrl) ? undefined : img.imageUrl,
+    })),
+  }
+}
+
 export function ImageGenerator({
   prompt,
   imageType,
@@ -181,10 +203,10 @@ export function ImageGenerator({
         ...(additionalFeedback ? [additionalFeedback] : []),
       ]
 
-      // 第一步: 生成图片提示词
+      // 第一步: 生成图片提示词（移除 base64 图片避免 body 超限）
       const promptResult = await generateImagePrompt({
         imageType,
-        context: context || {},
+        context: stripBase64Images(context) || {},
         feedbackExamples: allFeedback,
         faceSeed: faceSeed || undefined,
         referenceImageAnalysis,
@@ -233,31 +255,25 @@ export function ImageGenerator({
       let finalImageUrl = imageResult.imageUrl
       let displayImageUrl = imageResult.imageUrl
 
-      // 如果是 base64 图片，先上传到 OSS
+      // 如果是 base64 图片，必须上传到 OSS
       if (imageResult.imageUrl.startsWith('data:')) {
-        try {
-          // 上传到 OSS 获取永久 URL
-          const ossUrl = await uploadBase64Image(
-            imageResult.imageUrl,
-            `${imageType}-${Date.now()}`
-          )
-          finalImageUrl = ossUrl
+        // 上传到 OSS 获取永久 URL
+        const ossUrl = await uploadBase64Image(
+          imageResult.imageUrl,
+          `${imageType}-${Date.now()}`
+        )
+        finalImageUrl = ossUrl
 
-          // 为本地显示创建 blob URL
-          const blob = await fetch(imageResult.imageUrl).then(r => r.blob())
-          const blobUrl = URL.createObjectURL(blob)
+        // 为本地显示创建 blob URL
+        const blob = await fetch(imageResult.imageUrl).then(r => r.blob())
+        const blobUrl = URL.createObjectURL(blob)
 
-          if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
-            URL.revokeObjectURL(createdBlobUrl)
-          }
-
-          setCreatedBlobUrl(blobUrl)
-          displayImageUrl = blobUrl
-        } catch (e) {
-          console.error('Failed to upload image to OSS:', e)
-          // 上传失败时仍然使用原始 base64
-          finalImageUrl = imageResult.imageUrl
+        if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(createdBlobUrl)
         }
+
+        setCreatedBlobUrl(blobUrl)
+        displayImageUrl = blobUrl
       }
 
       setImageUrl(displayImageUrl)
@@ -282,7 +298,7 @@ export function ImageGenerator({
 
       const promptResult = await generateImagePrompt({
         imageType,
-        context: context || {},
+        context: stripBase64Images(context) || {},
         feedbackExamples,
         // 不传递 faceSeed，生成新的人脸种子
       })
@@ -329,31 +345,25 @@ export function ImageGenerator({
       let finalImageUrl = imageResult.imageUrl
       let displayImageUrl = imageResult.imageUrl
 
-      // 如果是 base64 图片，先上传到 OSS
+      // 如果是 base64 图片，必须上传到 OSS
       if (imageResult.imageUrl.startsWith('data:')) {
-        try {
-          // 上传到 OSS 获取永久 URL
-          const ossUrl = await uploadBase64Image(
-            imageResult.imageUrl,
-            `${imageType}-${Date.now()}`
-          )
-          finalImageUrl = ossUrl
+        // 上传到 OSS 获取永久 URL
+        const ossUrl = await uploadBase64Image(
+          imageResult.imageUrl,
+          `${imageType}-${Date.now()}`
+        )
+        finalImageUrl = ossUrl
 
-          // 为本地显示创建 blob URL
-          const blob = await fetch(imageResult.imageUrl).then(r => r.blob())
-          const blobUrl = URL.createObjectURL(blob)
+        // 为本地显示创建 blob URL
+        const blob = await fetch(imageResult.imageUrl).then(r => r.blob())
+        const blobUrl = URL.createObjectURL(blob)
 
-          if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
-            URL.revokeObjectURL(createdBlobUrl)
-          }
-
-          setCreatedBlobUrl(blobUrl)
-          displayImageUrl = blobUrl
-        } catch (e) {
-          console.error('Failed to upload image to OSS:', e)
-          // 上传失败时仍然使用原始 base64
-          finalImageUrl = imageResult.imageUrl
+        if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(createdBlobUrl)
         }
+
+        setCreatedBlobUrl(blobUrl)
+        displayImageUrl = blobUrl
       }
 
       setImageUrl(displayImageUrl)

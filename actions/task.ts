@@ -78,6 +78,9 @@ export async function executeTask(
       case 'check_campaign':
         result = await executeCheckCampaign(task)
         break
+      case 'check_managed_campaign':
+        result = await executeCheckManagedCampaign(task)
+        break
       case 'restart_campaign':
         result = await executeRestartCampaign(task)
         break
@@ -213,6 +216,31 @@ async function executePauseCampaign(task: SystemTask): Promise<unknown> {
 
   const { pauseDelivery } = await import('./delivery')
   return pauseDelivery(task.campaignId.toString())
+}
+
+/**
+ * 执行托管投放检查任务（两阶段检查）
+ */
+async function executeCheckManagedCampaign(task: SystemTask): Promise<unknown> {
+  if (!task.campaignId) {
+    throw new Error('缺少 campaignId')
+  }
+  if (!task.workId) {
+    throw new Error('缺少 workId')
+  }
+
+  const publicationIndex = (task.params as { publicationIndex?: number }).publicationIndex
+  if (publicationIndex === undefined) {
+    throw new Error('缺少 publicationIndex')
+  }
+
+  const { checkManagedCampaign } = await import('./delivery')
+  return checkManagedCampaign(
+    task.campaignId.toString(),
+    task.workId.toString(),
+    publicationIndex,
+    task.params as Record<string, unknown>
+  )
 }
 
 /**

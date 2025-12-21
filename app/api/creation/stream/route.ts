@@ -1,8 +1,9 @@
 import { createAnthropicClient, generateUserId } from '@/lib/anthropic/client'
 import { buildSystemPrompt, buildUserMessage } from '@/lib/anthropic/prompts'
-import type { CreationFormData, LearningData } from '@/types/creation'
+import type { CreationFormData, LearningData, GenerationOptions } from '@/types/creation'
 import { deductBalance } from '@/lib/billing/service'
 import { headers } from 'next/headers'
+import type { Tool } from '@anthropic-ai/sdk/resources/messages'
 
 // JSON 字段对应的进度百分比
 const FIELD_PROGRESS: Record<string, { percent: number; label: string }> = {
@@ -14,6 +15,160 @@ const FIELD_PROGRESS: Record<string, { percent: number; label: string }> = {
   comments: { percent: 85, label: '准备评论区运营...' },
   topics: { percent: 92, label: '选择话题标签...' },
   privateMessage: { percent: 98, label: '生成私信模板...' },
+}
+
+// 构建动态 Tool Schema，根据用户选择的生成选项
+function buildContentGeneratorTool(options?: GenerationOptions): Tool {
+  const properties: Record<string, object> = {
+    positioning: {
+      type: 'object',
+      description: '内容定位分析',
+      properties: {
+        contentType: { type: 'string', description: '内容类型，如：干货教程、产品种草、经验分享、情绪共鸣、攻略合集等' },
+        targetAudience: { type: 'string', description: '目标人群描述' },
+        tone: { type: 'string', description: '内容调性' },
+        keywords: { type: 'array', items: { type: 'string' }, description: '核心关键词列表' },
+      },
+      required: ['contentType', 'targetAudience', 'tone', 'keywords'],
+    },
+  }
+
+  const required: string[] = ['positioning']
+
+  // 根据选项添加相应字段
+  if (!options || options.cover !== false) {
+    properties.cover = {
+      type: 'object',
+      description: '封面图规划（第1张图片）',
+      properties: {
+        index: { type: 'number', description: '固定为1' },
+        type: { type: 'string', description: '封面类型，如：要点罗列型、产品展示型、对比图型、人物+文字型、金句海报型、合集预览型等' },
+        content: { type: 'string', description: '主视觉元素描述' },
+        overlay: { type: 'string', description: '封面文案' },
+        colorScheme: { type: 'string', description: '配色方案' },
+        tips: { type: 'string', description: '设计建议' },
+      },
+      required: ['index', 'type', 'content'],
+    }
+    required.push('cover')
+  }
+
+  if (!options || options.title !== false) {
+    properties.title = {
+      type: 'object',
+      description: '标题',
+      properties: {
+        text: { type: 'string', description: '标题文本（10-20字，严格不超过20字）' },
+        highlight: { type: 'string', description: '亮点说明' },
+      },
+      required: ['text', 'highlight'],
+    }
+    required.push('title')
+  }
+
+  if (!options || options.content !== false) {
+    properties.content = {
+      type: 'object',
+      description: '正文内容',
+      properties: {
+        body: { type: 'string', description: '完整正文（使用 \\n 换行）' },
+        structure: { type: 'string', description: '结构说明' },
+      },
+      required: ['body', 'structure'],
+    }
+    required.push('content')
+  }
+
+  if (!options || options.images !== false) {
+    properties.images = {
+      type: 'array',
+      description: '配图规划（从第2张开始，1-5张）',
+      items: {
+        type: 'object',
+        properties: {
+          index: { type: 'number', description: '图片序号（从2开始）' },
+          type: { type: 'string', description: '图片类型，如：产品图、场景图、文字图、对比图等' },
+          content: { type: 'string', description: '图片内容描述' },
+          overlay: { type: 'string', description: '文字覆盖' },
+          colorScheme: { type: 'string', description: '配色方案' },
+          tips: { type: 'string', description: '设计建议' },
+        },
+        required: ['index', 'type', 'content'],
+      },
+    }
+    required.push('images')
+  }
+
+  if (!options || options.comments !== false) {
+    properties.comments = {
+      type: 'object',
+      description: '评论区运营',
+      properties: {
+        pinnedComment: { type: 'string', description: '置顶自评内容' },
+        qaList: {
+          type: 'array',
+          description: '预设问答列表（3-5个）',
+          items: {
+            type: 'object',
+            properties: {
+              question: { type: 'string', description: '预设问题' },
+              answer: { type: 'string', description: '建议回复' },
+            },
+            required: ['question', 'answer'],
+          },
+        },
+      },
+      required: ['pinnedComment', 'qaList'],
+    }
+    required.push('comments')
+  }
+
+  if (!options || options.topics !== false) {
+    properties.topics = {
+      type: 'object',
+      description: '话题标签',
+      properties: {
+        tags: { type: 'array', items: { type: 'string' }, description: '话题标签列表（3-5个，每个以#开头）' },
+        reason: { type: 'string', description: '选择这些话题的理由' },
+      },
+      required: ['tags', 'reason'],
+    }
+    required.push('topics')
+  }
+
+  if (options?.privateMessage === true) {
+    properties.privateMessage = {
+      type: 'object',
+      description: '私信模板',
+      properties: {
+        greeting: { type: 'string', description: '私信开场白' },
+        templates: {
+          type: 'array',
+          description: '场景化回复模板（2-3个）',
+          items: {
+            type: 'object',
+            properties: {
+              scenario: { type: 'string', description: '用户咨询场景' },
+              message: { type: 'string', description: '私信回复模板' },
+            },
+            required: ['scenario', 'message'],
+          },
+        },
+      },
+      required: ['greeting', 'templates'],
+    }
+    required.push('privateMessage')
+  }
+
+  return {
+    name: 'generate_xhs_content',
+    description: '生成小红书图文内容方案，包括定位、封面、标题、正文、配图、评论、话题等',
+    input_schema: {
+      type: 'object',
+      properties,
+      required,
+    },
+  }
 }
 
 export async function POST(request: Request) {
@@ -62,6 +217,9 @@ export async function POST(request: Request) {
     const userMessage = buildUserMessage(formData, learningData)
     const anthropicUserId = generateUserId()
 
+    // 构建动态 Tool
+    const contentTool = buildContentGeneratorTool(formData.generationOptions)
+
     // 创建流式响应
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
@@ -70,34 +228,34 @@ export async function POST(request: Request) {
           // 发送初始进度
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', percent: 0, label: '正在连接 AI...' })}\n\n`))
 
-          // 使用流式请求
+          // 使用流式请求 + Tool Use
           const anthropicStream = client.messages.stream({
             model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
             max_tokens: 16384,
             system: systemPrompt,
             messages: [
-              { role: 'user', content: userMessage },
-              { role: 'assistant', content: '{' }
+              { role: 'user', content: userMessage }
             ],
+            tools: [contentTool],
+            tool_choice: { type: 'tool', name: 'generate_xhs_content' },
             metadata: { user_id: anthropicUserId }
           })
 
-          let fullText = '{'
+          let toolInput = ''
           let lastDetectedField = ''
           let currentPercent = 5
 
           // 发送开始进度
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', percent: 5, label: 'AI 开始生成...' })}\n\n`))
 
-          // 监听流事件
-          anthropicStream.on('text', (text) => {
-            fullText += text
+          // 监听流事件 - Tool Use 模式下监听 input_json_delta
+          anthropicStream.on('inputJson', (json) => {
+            toolInput += json
 
-            // 检测新字段
+            // 检测新字段来更新进度
             for (const [field, info] of Object.entries(FIELD_PROGRESS)) {
-              // 检查是否出现新字段（格式如 "fieldName": 或 "fieldName":）
               const fieldPattern = new RegExp(`"${field}"\\s*:`)
-              if (fieldPattern.test(fullText) && lastDetectedField !== field) {
+              if (fieldPattern.test(toolInput) && lastDetectedField !== field) {
                 if (info.percent > currentPercent) {
                   lastDetectedField = field
                   currentPercent = info.percent
@@ -110,191 +268,42 @@ export async function POST(request: Request) {
           // 等待流完成
           const response = await anthropicStream.finalMessage()
 
-          // 提取完整文本
-          for (const block of response.content) {
-            if (block.type === 'text') {
-              fullText = '{' + block.text
-            }
-          }
-
           // 发送完成进度
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', percent: 100, label: '生成完成！' })}\n\n`))
 
-          // 尝试修复和解析 JSON
+          // 从 Tool Use 响应中提取结果
           let result = null
-          let parseError = ''
+          let rawText = ''
 
-          // 辅助函数：修复 JSON 字符串中的控制字符
-          const fixJsonString = (text: string): string => {
-            let fixed = ''
-            let inString = false
-            let i = 0
-
-            while (i < text.length) {
-              const char = text[i]
-              const code = char.charCodeAt(0)
-
-              if (inString) {
-                // 在字符串内部
-                if (char === '\\' && i + 1 < text.length) {
-                  const nextChar = text[i + 1]
-                  const nextCode = nextChar.charCodeAt(0)
-
-                  // 如果下一个字符是控制字符，说明 AI 写了 \<实际换行>，应该转换为 \n
-                  if (nextCode < 32) {
-                    switch (nextCode) {
-                      case 10: fixed += '\\n'; break
-                      case 13: fixed += '\\r'; break
-                      case 9:  fixed += '\\t'; break
-                      default: fixed += '\\u' + nextCode.toString(16).padStart(4, '0')
-                    }
-                    i += 2
-                    continue
-                  }
-
-                  // 正常的转义序列，保留两个字符
-                  fixed += char + nextChar
-                  i += 2
-                  continue
-                }
-
-                if (char === '"') {
-                  // 字符串结束
-                  inString = false
-                  fixed += char
-                  i++
-                  continue
-                }
-
-                // 处理字符串中的控制字符（没有前导反斜杠的情况）
-                if (code < 32) {
-                  switch (code) {
-                    case 10: fixed += '\\n'; break
-                    case 13: fixed += '\\r'; break
-                    case 9:  fixed += '\\t'; break
-                    case 8:  fixed += '\\b'; break
-                    case 12: fixed += '\\f'; break
-                    default: fixed += '\\u' + code.toString(16).padStart(4, '0')
-                  }
-                  i++
-                  continue
-                }
-
-                fixed += char
-                i++
-              } else {
-                // 在字符串外部
-                if (char === '"') {
-                  inString = true
-                }
-                fixed += char
-                i++
-              }
-            }
-
-            // 如果还在字符串内，说明缺少闭合引号
-            if (inString) {
-              fixed += '"'
-            }
-
-            return fixed
-          }
-
-          // 辅助函数：尝试修复并解析 JSON
-          const tryParseJson = (text: string): object | null => {
-            // 第一步：清理 markdown 代码块标记
-            let cleaned = text.trim()
-            cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/i, '')
-            cleaned = cleaned.replace(/^```\s*/i, '').replace(/\s*```$/i, '')
-
-            // 第二步：修复字符串中的控制字符
-            const fixed = fixJsonString(cleaned)
-
-            // 第三步：修复未闭合的括号
-            let balanced = fixed
-            const openBraces = (balanced.match(/{/g) || []).length
-            const closeBraces = (balanced.match(/}/g) || []).length
-            const openBrackets = (balanced.match(/\[/g) || []).length
-            const closeBrackets = (balanced.match(/]/g) || []).length
-
-            // 添加缺失的闭合括号（按正确顺序）
-            const missingBrackets = openBrackets - closeBrackets
-            const missingBraces = openBraces - closeBraces
-
-            if (missingBrackets > 0 || missingBraces > 0) {
-              // 分析结尾来决定添加顺序
-              const trimmed = balanced.trimEnd()
-              const lastChar = trimmed[trimmed.length - 1]
-
-              // 移除末尾可能的不完整内容
-              if (lastChar !== '}' && lastChar !== ']' && lastChar !== '"' &&
-                  lastChar !== 'e' && lastChar !== 'l' && // true, false, null
-                  !/[0-9]/.test(lastChar)) {
-                // 尝试找到最后一个完整的值
-                const lastCompleteIdx = Math.max(
-                  trimmed.lastIndexOf('}'),
-                  trimmed.lastIndexOf(']'),
-                  trimmed.lastIndexOf('"'),
-                )
-                if (lastCompleteIdx > 0) {
-                  balanced = trimmed.substring(0, lastCompleteIdx + 1)
-                }
-              }
-
-              // 移除末尾的逗号
-              balanced = balanced.replace(/,\s*$/, '')
-
-              // 重新计算缺失的括号
-              const newOpenBrackets = (balanced.match(/\[/g) || []).length
-              const newCloseBrackets = (balanced.match(/]/g) || []).length
-              const newOpenBraces = (balanced.match(/{/g) || []).length
-              const newCloseBraces = (balanced.match(/}/g) || []).length
-
-              // 添加缺失的闭合括号
-              for (let i = 0; i < newOpenBrackets - newCloseBrackets; i++) {
-                balanced += ']'
-              }
-              for (let i = 0; i < newOpenBraces - newCloseBraces; i++) {
-                balanced += '}'
-              }
-            }
-
-            // 第四步：移除对象/数组中末尾的逗号
-            balanced = balanced.replace(/,(\s*[}\]])/g, '$1')
-
-            return JSON.parse(balanced)
-          }
-
-          try {
-            result = JSON.parse(fullText)
-          } catch (e) {
-            parseError = e instanceof Error ? e.message : 'JSON 解析失败'
-
-            // 尝试使用修复函数
-            try {
-              result = tryParseJson(fullText)
-              console.log('JSON 修复成功')
-            } catch (e2) {
-              console.error('JSON 修复失败:', parseError, e2 instanceof Error ? e2.message : '')
+          for (const block of response.content) {
+            if (block.type === 'tool_use' && block.name === 'generate_xhs_content') {
+              // Tool Use 的 input 已经是解析好的 JSON 对象
+              result = block.input
+              rawText = JSON.stringify(block.input, null, 2)
+              break
             }
           }
 
           if (result) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', success: true, result, rawText: fullText })}\n\n`))
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', success: true, result, rawText })}\n\n`))
           } else {
-            // JSON 解析失败，返回原始文本和错误信息
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', success: false, rawText: fullText, parseError })}\n\n`))
+            // 没有找到 tool_use block，尝试回退到文本解析
+            for (const block of response.content) {
+              if (block.type === 'text') {
+                rawText = block.text
+                break
+              }
+            }
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', success: false, rawText, parseError: '未找到有效的工具调用响应' })}\n\n`))
           }
 
           controller.enqueue(encoder.encode('data: [DONE]\n\n'))
           controller.close()
         } catch (error: unknown) {
           console.error('流式生成错误:', error)
-          // 输出更详细的错误信息用于调试
           let errorMessage = '生成失败'
           if (error instanceof Error) {
             errorMessage = error.message
-            // 检查是否是网络连接错误
             if (error.message.includes('fetch') || error.message.includes('connect') || error.message.includes('ECONNREFUSED')) {
               errorMessage = `连接 AI 服务失败: ${error.message}`
               console.error('网络错误详情:', {

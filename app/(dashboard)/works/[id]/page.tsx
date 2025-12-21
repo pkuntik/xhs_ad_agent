@@ -21,6 +21,25 @@ import type { Work, Publication } from '@/types/work'
 import type { GenerationResult } from '@/types/creation'
 import type { NoteDetail, CachedNoteDetail, NoteSnapshot } from '@/types/note'
 
+// 移除 draftContent 中的 base64 图片数据，避免 Server Action body 超限
+function stripBase64FromDraftContent(draft: GenerationResult | null | undefined): GenerationResult | undefined {
+  if (!draft) return undefined
+
+  const isBase64 = (url?: string) => url?.startsWith('data:')
+
+  return {
+    ...draft,
+    cover: draft.cover ? {
+      ...draft.cover,
+      imageUrl: isBase64(draft.cover.imageUrl) ? undefined : draft.cover.imageUrl,
+    } : undefined,
+    images: draft.images?.map(img => ({
+      ...img,
+      imageUrl: isBase64(img.imageUrl) ? undefined : img.imageUrl,
+    })),
+  }
+}
+
 const statusMap = {
   unused: { label: '未使用', variant: 'secondary' as const },
   scanned: { label: '已扫码', variant: 'outline' as const },
@@ -100,7 +119,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
         title: newTitle,
         content: editedContent,
         tags: editedTopics.split(/\s+/).filter(Boolean),
-        draftContent: draftContent || undefined,
+        draftContent: stripBase64FromDraftContent(draftContent),
       })
       if (result.success) {
         setWork({ ...work, title: newTitle })
@@ -122,7 +141,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
         title: editedTitle,
         content: newContent,
         tags: editedTopics.split(/\s+/).filter(Boolean),
-        draftContent: draftContent || undefined,
+        draftContent: stripBase64FromDraftContent(draftContent),
       })
       if (result.success) {
         setWork({ ...work, content: newContent })
@@ -145,7 +164,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
         title: editedTitle,
         content: editedContent,
         tags,
-        draftContent: draftContent || undefined,
+        draftContent: stripBase64FromDraftContent(draftContent),
       })
       if (result.success) {
         setWork({ ...work, tags })
@@ -294,7 +313,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     setDraftContent(updatedDraftContent)
 
     try {
-      await updateWorkImages(work._id.toString(), updatedDraftContent)
+      await updateWorkImages(work._id.toString(), stripBase64FromDraftContent(updatedDraftContent)!)
       setWork({ ...work, draftContent: updatedDraftContent })
     } catch (err) {
       console.error('保存封面图片失败:', err)
@@ -315,7 +334,7 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     setDraftContent(updatedDraftContent)
 
     try {
-      await updateWorkImages(work._id.toString(), updatedDraftContent)
+      await updateWorkImages(work._id.toString(), stripBase64FromDraftContent(updatedDraftContent)!)
       setWork({ ...work, draftContent: updatedDraftContent })
     } catch (err) {
       console.error('保存配图失败:', err)
