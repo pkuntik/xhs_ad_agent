@@ -3,7 +3,7 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
-      bodySizeLimit: '2mb',
+      bodySizeLimit: '10mb',
     },
   },
   // 让 Vercel serverless 函数包含 prompts 目录

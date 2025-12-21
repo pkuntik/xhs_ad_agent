@@ -224,6 +224,8 @@ export async function POST(request: Request) {
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
       async start(controller) {
+        let toolInput = ''
+
         try {
           // 发送初始进度
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', percent: 0, label: '正在连接 AI...' })}\n\n`))
@@ -241,7 +243,6 @@ export async function POST(request: Request) {
             metadata: { user_id: anthropicUserId }
           })
 
-          let toolInput = ''
           let lastDetectedField = ''
           let currentPercent = 5
 
@@ -314,7 +315,13 @@ export async function POST(request: Request) {
               })
             }
           }
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: errorMessage })}\n\n`))
+          // 返回错误信息，同时包含已收集的原始 JSON（如果有）
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            type: 'result',
+            success: false,
+            rawText: toolInput || '（未收集到数据）',
+            parseError: errorMessage
+          })}\n\n`))
           controller.close()
         }
       }

@@ -393,30 +393,32 @@ export default function CreationPage() {
 
   // 封面图片生成回调
   function handleCoverImageGenerated(imageUrl: string, imagePrompt: string, chuangkitDesignId?: string) {
-    if (result?.cover) {
-      setResult({
-        ...result,
+    setResult(prev => {
+      if (!prev?.cover) return prev
+      return {
+        ...prev,
         cover: {
-          ...result.cover,
+          ...prev.cover,
           imageUrl,
           imagePrompt,
           chuangkitDesignId,
         },
-      })
-    }
+      }
+    })
   }
 
   // 配图生成回调
   function handleImageGenerated(index: number, imageUrl: string, imagePrompt: string, chuangkitDesignId?: string) {
-    if (result?.images) {
-      const updatedImages = result.images.map((img, i) =>
+    setResult(prev => {
+      if (!prev?.images) return prev
+      const updatedImages = prev.images.map((img, i) =>
         i === index ? { ...img, imageUrl, imagePrompt, chuangkitDesignId } : img
       )
-      setResult({
-        ...result,
+      return {
+        ...prev,
         images: updatedImages,
-      })
-    }
+      }
+    })
   }
 
   // 内容变更回调（编辑或重新生成规划时）

@@ -325,7 +325,8 @@ export async function generateImage(
       const colorScheme = context?.colorScheme || '明亮清新'
       const tone = context?.tone || '轻松友好'
 
-      fullPrompt = `生成一张小红书封面图。
+      fullPrompt = `当前时间是：${new Date().toISOString()}
+请生成一张小红书封面图。
 
 ${prompt}
 
@@ -344,7 +345,8 @@ ${overlay ? `封面需要展示文字「${overlay}」，文字要清晰醒目，
       const overlay = context?.overlay || ''
       const imageIndex = context?.imageIndex || 1
 
-      fullPrompt = `生成一张小红书笔记配图。
+      fullPrompt = `当前时间是：${new Date().toISOString()}
+请生成一张小红书笔记配图。
 
 ${prompt}
 

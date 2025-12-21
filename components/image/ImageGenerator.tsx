@@ -21,6 +21,40 @@ const REGENERATE_REASONS = [
   { value: 'other', label: '其他' },
 ]
 
+// OSS 域名，用于判断是否已经是 OSS URL
+const OSS_DOMAIN = 'ye.e-idear.com'
+
+// 将图片上传到 OSS 并返回永久 URL
+async function uploadImageToOSS(
+  imageUrl: string,
+  imageType: string
+): Promise<{ ossUrl: string; displayUrl: string }> {
+  if (imageUrl.startsWith('data:')) {
+    // base64 图片：直接上传到 OSS
+    const ossUrl = await uploadBase64Image(imageUrl, `${imageType}-${Date.now()}`)
+    // 为本地显示创建 blob URL
+    const blob = await fetch(imageUrl).then(r => r.blob())
+    const displayUrl = URL.createObjectURL(blob)
+    return { ossUrl, displayUrl }
+  } else if (!imageUrl.includes(OSS_DOMAIN)) {
+    // 非 OSS URL（临时 URL）：下载后上传到 OSS
+    const response = await fetch(imageUrl)
+    const blob = await response.blob()
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+    const ossUrl = await uploadBase64Image(base64, `${imageType}-${Date.now()}`)
+    const displayUrl = URL.createObjectURL(blob)
+    return { ossUrl, displayUrl }
+  } else {
+    // 已经是 OSS URL，直接返回
+    return { ossUrl: imageUrl, displayUrl: imageUrl }
+  }
+}
+
 interface FeedbackWithReason {
   prompt: string
   feedback: 'like' | 'dislike'
@@ -252,34 +286,21 @@ export function ImageGenerator({
         throw new Error(imageResult.error || '图片生成失败')
       }
 
-      let finalImageUrl = imageResult.imageUrl
-      let displayImageUrl = imageResult.imageUrl
+      // 上传到 OSS 获取永久 URL
+      const { ossUrl, displayUrl } = await uploadImageToOSS(imageResult.imageUrl, imageType)
 
-      // 如果是 base64 图片，必须上传到 OSS
-      if (imageResult.imageUrl.startsWith('data:')) {
-        // 上传到 OSS 获取永久 URL
-        const ossUrl = await uploadBase64Image(
-          imageResult.imageUrl,
-          `${imageType}-${Date.now()}`
-        )
-        finalImageUrl = ossUrl
-
-        // 为本地显示创建 blob URL
-        const blob = await fetch(imageResult.imageUrl).then(r => r.blob())
-        const blobUrl = URL.createObjectURL(blob)
-
-        if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(createdBlobUrl)
-        }
-
-        setCreatedBlobUrl(blobUrl)
-        displayImageUrl = blobUrl
+      // 释放旧的 blob URL
+      if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(createdBlobUrl)
+      }
+      if (displayUrl.startsWith('blob:')) {
+        setCreatedBlobUrl(displayUrl)
       }
 
-      setImageUrl(displayImageUrl)
+      setImageUrl(displayUrl)
       // 新生成的图片清除旧的设计稿 ID（因为是全新的图片）
       setChuangkitDesignId(null)
-      onImageGenerated?.(finalImageUrl, aiGeneratedPrompt)
+      onImageGenerated?.(ossUrl, aiGeneratedPrompt)
     } catch (err: unknown) {
       console.error('Image generation error:', err)
       const errorMessage = err instanceof Error ? err.message : '图片生成失败'
@@ -342,34 +363,21 @@ export function ImageGenerator({
         throw new Error(imageResult.error || '图片生成失败')
       }
 
-      let finalImageUrl = imageResult.imageUrl
-      let displayImageUrl = imageResult.imageUrl
+      // 上传到 OSS 获取永久 URL
+      const { ossUrl, displayUrl } = await uploadImageToOSS(imageResult.imageUrl, imageType)
 
-      // 如果是 base64 图片，必须上传到 OSS
-      if (imageResult.imageUrl.startsWith('data:')) {
-        // 上传到 OSS 获取永久 URL
-        const ossUrl = await uploadBase64Image(
-          imageResult.imageUrl,
-          `${imageType}-${Date.now()}`
-        )
-        finalImageUrl = ossUrl
-
-        // 为本地显示创建 blob URL
-        const blob = await fetch(imageResult.imageUrl).then(r => r.blob())
-        const blobUrl = URL.createObjectURL(blob)
-
-        if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(createdBlobUrl)
-        }
-
-        setCreatedBlobUrl(blobUrl)
-        displayImageUrl = blobUrl
+      // 释放旧的 blob URL
+      if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(createdBlobUrl)
+      }
+      if (displayUrl.startsWith('blob:')) {
+        setCreatedBlobUrl(displayUrl)
       }
 
-      setImageUrl(displayImageUrl)
+      setImageUrl(displayUrl)
       // 新生成的图片清除旧的设计稿 ID（因为是全新的图片）
       setChuangkitDesignId(null)
-      onImageGenerated?.(finalImageUrl, aiGeneratedPrompt)
+      onImageGenerated?.(ossUrl, aiGeneratedPrompt)
     } catch (err: unknown) {
       console.error('Change face error:', err)
       const errorMessage = err instanceof Error ? err.message : '切换人脸失败'

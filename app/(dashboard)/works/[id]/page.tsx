@@ -299,7 +299,11 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
 
   // 封面图片生成回调
   async function handleCoverImageGenerated(imageUrl: string, imagePrompt: string, chuangkitDesignId?: string) {
-    if (!work || !draftContent?.cover) return
+    if (!work || !draftContent?.cover) {
+      console.error('保存封面图片失败: work 或 draftContent.cover 不存在', { work: !!work, cover: !!draftContent?.cover })
+      toast.error('保存封面图片失败：数据不完整')
+      return
+    }
 
     const updatedDraftContent = {
       ...draftContent,
@@ -313,16 +317,27 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     setDraftContent(updatedDraftContent)
 
     try {
-      await updateWorkImages(work._id.toString(), stripBase64FromDraftContent(updatedDraftContent)!)
-      setWork({ ...work, draftContent: updatedDraftContent })
+      const result = await updateWorkImages(work._id.toString(), stripBase64FromDraftContent(updatedDraftContent)!)
+      if (result.success) {
+        setWork({ ...work, draftContent: updatedDraftContent })
+        toast.success('封面图片已保存')
+      } else {
+        console.error('保存封面图片失败:', result.error)
+        toast.error(result.error || '保存封面图片失败')
+      }
     } catch (err) {
       console.error('保存封面图片失败:', err)
+      toast.error('保存封面图片失败')
     }
   }
 
   // 配图生成回调
   async function handleImageGenerated(index: number, imageUrl: string, imagePrompt: string, chuangkitDesignId?: string) {
-    if (!work || !draftContent?.images) return
+    if (!work || !draftContent?.images) {
+      console.error('保存配图失败: work 或 draftContent.images 不存在', { work: !!work, images: !!draftContent?.images })
+      toast.error('保存配图失败：数据不完整')
+      return
+    }
 
     const updatedImages = draftContent.images.map((img, i) =>
       i === index ? { ...img, imageUrl, imagePrompt, chuangkitDesignId } : img
@@ -334,10 +349,17 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
     setDraftContent(updatedDraftContent)
 
     try {
-      await updateWorkImages(work._id.toString(), stripBase64FromDraftContent(updatedDraftContent)!)
-      setWork({ ...work, draftContent: updatedDraftContent })
+      const result = await updateWorkImages(work._id.toString(), stripBase64FromDraftContent(updatedDraftContent)!)
+      if (result.success) {
+        setWork({ ...work, draftContent: updatedDraftContent })
+        toast.success(`配图 ${index + 1} 已保存`)
+      } else {
+        console.error('保存配图失败:', result.error)
+        toast.error(result.error || '保存配图失败')
+      }
     } catch (err) {
       console.error('保存配图失败:', err)
+      toast.error('保存配图失败')
     }
   }
 
