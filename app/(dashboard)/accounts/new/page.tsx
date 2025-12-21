@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { createAccount, createAccountByPassword } from '@/actions/account'
+import { createAccount, createAccountByPassword, createAccountByQRCode } from '@/actions/account'
 import { AccountLoginForm, type LoginFormData } from '@/components/accounts/account-login-form'
 import { User, Wallet, ArrowLeft, CheckCircle, Loader2 } from 'lucide-react'
 
@@ -50,18 +50,21 @@ export default function NewAccountPage() {
           dailyBudget,
           defaultBidAmount,
         })
-      } else {
+      } else if (accountPreview.loginType === 'password') {
         result = await createAccountByPassword({
           email: accountPreview.email!,
           password: accountPreview.password!,
           dailyBudget,
           defaultBidAmount,
         })
+      } else {
+        // qrcode 登录
+        result = await createAccountByQRCode(accountPreview.cookie)
       }
 
       if (result.success) {
-        router.push('/accounts')
-        router.refresh()
+        // 使用 replace 避免缓存问题，revalidatePath 在 server action 中已调用
+        router.replace('/accounts')
       } else {
         setError(result.error || '添加失败')
       }
@@ -93,12 +96,12 @@ export default function NewAccountPage() {
           <CardHeader>
             <CardTitle>选择登录方式</CardTitle>
             <CardDescription>
-              支持账号密码登录或 Cookie 方式添加账号
+              支持扫码登录、账号密码登录或 Cookie 方式添加账号
             </CardDescription>
           </CardHeader>
           <CardContent>
             <AccountLoginForm
-              defaultLoginType="password"
+              defaultLoginType="qrcode"
               onSuccess={handleLoginSuccess}
               onCancel={() => router.back()}
             />
@@ -143,6 +146,11 @@ export default function NewAccountPage() {
                   {accountPreview.loginType === 'password' && (
                     <p className="text-sm text-green-600">
                       登录方式: 账号密码
+                    </p>
+                  )}
+                  {accountPreview.loginType === 'qrcode' && (
+                    <p className="text-sm text-green-600">
+                      登录方式: 扫码登录
                     </p>
                   )}
                 </div>

@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { ObjectId } from 'mongodb'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { validateCookie } from '@/lib/xhs/auth'
-import { loginWithEmailPassword } from '@/lib/xhs/login'
+import { loginWithEmailPassword, getQRCodeLogin, checkQRCodeStatus } from '@/lib/xhs/login'
 import { queryChipsNotes, queryChipsOrders, getChipsWalletBalance } from '@/lib/xhs/api/chips'
 import type { XhsAccount, AccountListItem, CreateAccountInput, CreateAccountByPasswordInput, AccountThresholds } from '@/types/account'
 import type { RemoteNote, RemoteNoteItem } from '@/types/remote-note'
@@ -1264,5 +1264,193 @@ export async function getSyncedOrders(
       success: false,
       error: error instanceof Error ? error.message : '获取订单列表失败',
     }
+  }
+}
+
+// ============ 扫码登录相关 ============
+
+// 获取二维码结果
+export interface GetQRCodeResult {
+  success: boolean
+  error?: string
+  qrCodeUrl?: string
+  qrCodeId?: string
+}
+
+/**
+ * 获取扫码登录二维码
+ */
+export async function getLoginQRCode(): Promise<GetQRCodeResult> {
+  try {
+    const result = await getQRCodeLogin()
+
+    if (!result.success) {
+      return { success: false, error: result.error || '获取二维码失败' }
+    }
+
+    return {
+      success: true,
+      qrCodeUrl: result.qrCodeUrl,
+      qrCodeId: result.qrCodeId,
+    }
+  } catch (error) {
+    console.error('获取登录二维码失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '获取二维码失败',
+    }
+  }
+}
+
+// 检查二维码状态结果
+export interface CheckQRCodeResult {
+  success: boolean
+  error?: string
+  status: 'waiting' | 'scanned' | 'confirmed' | 'expired'
+  cookie?: string
+}
+
+/**
+ * 检查二维码扫描状态
+ */
+export async function checkLoginQRCodeStatus(qrCodeId: string): Promise<CheckQRCodeResult> {
+  try {
+    const result = await checkQRCodeStatus(qrCodeId)
+
+    if (!result.success) {
+      return {
+        success: false,
+        error: result.error || '检查状态失败',
+        status: result.status,
+      }
+    }
+
+    if (result.status === 'confirmed' && result.loginResult?.cookie) {
+      return {
+        success: true,
+        status: 'confirmed',
+        cookie: result.loginResult.cookie,
+      }
+    }
+
+    return {
+      success: true,
+      status: result.status,
+    }
+  } catch (error) {
+    console.error('检查二维码状态失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '检查状态失败',
+      status: 'expired',
+    }
+  }
+}
+
+/**
+ * 通过扫码方式创建账号
+ */
+export async function createAccountByQRCode(
+  cookie: string
+): Promise<{ success: boolean; error?: string; id?: string }> {
+  try {
+    const currentUserId = await getCurrentUserId()
+    if (!currentUserId) {
+      return { success: false, error: '请先登录' }
+    }
+
+    const db = await getDb()
+
+    // 检查用户配额
+    const user = await db
+      .collection<User>(COLLECTIONS.USERS)
+      .findOne({ _id: new ObjectId(currentUserId) })
+
+    if (!user) {
+      return { success: false, error: '用户不存在' }
+    }
+
+    // 检查是否超出免费额度
+    if (user.currentAccounts >= user.maxAccounts) {
+      const deductResult = await deductBalance(currentUserId, 'account_add', {
+        relatedType: 'account',
+        description: '添加账号(超额)',
+      })
+
+      if (!deductResult.success) {
+        return {
+          success: false,
+          error: `账号数量已达上限(${user.maxAccounts}个)，${deductResult.error}`
+        }
+      }
+    }
+
+    // 验证 Cookie 有效性
+    const cookieInfo = await validateCookie(cookie)
+    if (!cookieInfo.valid) {
+      return { success: false, error: cookieInfo.errorMessage || '登录验证失败' }
+    }
+
+    // 检查是否已存在
+    if (cookieInfo.userId) {
+      const existing = await db
+        .collection(COLLECTIONS.ACCOUNTS)
+        .findOne({ visitorUserId: cookieInfo.userId })
+      if (existing) {
+        return { success: false, error: '该账号已存在' }
+      }
+    }
+
+    const accountName = cookieInfo.nickname || '未命名账号'
+
+    const account: Omit<XhsAccount, '_id'> = {
+      userId: new ObjectId(currentUserId),
+      name: accountName,
+      visitorUserId: cookieInfo.userId || '',
+      cookie: cookie,
+      nickname: cookieInfo.nickname,
+      avatar: cookieInfo.avatar,
+      loginType: 'qrcode',
+      advertiserId: cookieInfo.advertiserId || '',
+      sellerId: cookieInfo.sellerId,
+      balance: cookieInfo.balance || 0,
+      subAccount: cookieInfo.subAccount,
+      roleType: cookieInfo.roleType,
+      permissionsCount: cookieInfo.permissionsCount,
+      hasChipsPermission: cookieInfo.hasChipsPermission,
+      accountStatusDetail: cookieInfo.accountStatus,
+      hasAbnormalIssues: cookieInfo.hasAbnormalIssues,
+      autoManaged: false,
+      dailyBudget: 5000,
+      defaultBidAmount: 30,
+      thresholds: {
+        minConsumption: 100,
+        maxCostPerLead: 50,
+        maxFailRetries: 3,
+      },
+      status: 'active',
+      lastSyncAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    const result = await db
+      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+      .insertOne(account as XhsAccount)
+
+    // 更新用户账号数量
+    await db.collection<User>(COLLECTIONS.USERS).updateOne(
+      { _id: new ObjectId(currentUserId) },
+      {
+        $inc: { currentAccounts: 1 },
+        $set: { updatedAt: new Date() },
+      }
+    )
+
+    revalidatePath('/accounts')
+    return { success: true, id: result.insertedId.toString() }
+  } catch (error) {
+    console.error('扫码方式创建账号失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
   }
 }
