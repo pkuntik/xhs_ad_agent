@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,8 +15,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Sparkles, Save } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Loader2, Sparkles, Save, History, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { saveWork } from '@/actions/work'
+import { saveCreationHistory, getCreationHistoryList, deleteCreationHistory } from '@/actions/creation-history'
 import { ImageGenerator } from '@/components/image/ImageGenerator'
 import { CustomAudienceSelector } from '@/components/form/CustomAudienceSelector'
 import { ContentCard } from '@/components/works/content-card'
@@ -24,6 +33,7 @@ import { processImageUrl } from '@/lib/utils/image'
 import type {
   CreationFormData,
   GenerationResult,
+  CreationHistory,
   PromotionGoal,
   ContentScene,
   ContentLength,
@@ -96,6 +106,54 @@ export default function CreationPage() {
   // AI 图片生成相关状态
   const [faceSeed, setFaceSeed] = useState<string | null>(null)
 
+  // 历史记录状态
+  const [historyList, setHistoryList] = useState<CreationHistory[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+
+  // 加载历史记录
+  async function loadHistory() {
+    setHistoryLoading(true)
+    try {
+      const list = await getCreationHistoryList(20)
+      setHistoryList(list)
+    } catch (err) {
+      console.error('加载历史记录失败:', err)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  // 打开历史记录对话框时加载
+  useEffect(() => {
+    if (historyOpen) {
+      loadHistory()
+    }
+  }, [historyOpen])
+
+  // 加载历史记录到表单
+  function loadFromHistory(history: CreationHistory) {
+    setFormData(history.formData)
+    setResult(history.result)
+    setEditedTitle(history.result.title?.text || '')
+    setEditedContent(history.result.content?.body || '')
+    setEditedTopics(history.result.topics?.tags.join(' ') || '')
+    setHistoryOpen(false)
+    toast.success('已加载历史记录')
+  }
+
+  // 删除历史记录
+  async function handleDeleteHistory(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    const res = await deleteCreationHistory(id)
+    if (res.success) {
+      setHistoryList(list => list.filter(h => h._id !== id))
+      toast.success('已删除')
+    } else {
+      toast.error(res.error || '删除失败')
+    }
+  }
+
   async function handleGenerate() {
     if (!formData.topic.trim()) {
       setError('请输入选题方向')
@@ -154,6 +212,10 @@ export default function CreationPage() {
                   setEditedTitle(parsed.result.title?.text || '')
                   setEditedContent(parsed.result.content?.body || '')
                   setEditedTopics(parsed.result.topics?.tags.join(' ') || '')
+                  // 自动保存到历史记录
+                  saveCreationHistory(formData, parsed.result).catch(err => {
+                    console.error('保存历史记录失败:', err)
+                  })
                 }
                 // 如果解析失败，显示错误信息
                 if (parsed.parseError && !parsed.result) {
@@ -273,11 +335,67 @@ export default function CreationPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">AI 创作</h2>
-        <p className="text-muted-foreground">
-          使用 AI 生成小红书笔记内容
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">AI 创作</h2>
+          <p className="text-muted-foreground">
+            使用 AI 生成小红书笔记内容
+          </p>
+        </div>
+        <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" size="sm">
+              <History className="mr-2 h-4 w-4" />
+              历史记录
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md max-h-[80vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle>创作历史</DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto -mx-6 px-6">
+              {historyLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : historyList.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  暂无历史记录
+                </div>
+              ) : (
+                <div className="space-y-2 pb-4">
+                  {historyList.map((history) => (
+                    <div
+                      key={history._id}
+                      className="p-3 rounded-lg border hover:bg-muted/50 cursor-pointer group"
+                      onClick={() => loadFromHistory(history)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{history.title}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {history.formData.contentScene} · {history.formData.promotionGoal}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(history.createdAt).toLocaleString('zh-CN')}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => handleDeleteHistory(history._id, e)}
+                        >
+                          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

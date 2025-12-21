@@ -54,4 +54,6 @@ export const COLLECTIONS = {
   REMOTE_NOTES: 'remote_notes',
   // 订单（从聚光平台同步）
   ORDERS: 'orders',
+  // AI 创作历史
+  CREATION_HISTORY: 'creation_history',
 } as const

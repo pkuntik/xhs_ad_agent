@@ -137,3 +137,13 @@ export interface LearningData {
   badExamples: LearningExample[];
   references: Reference[];
 }
+
+// ============ 创作历史类型 ============
+
+export interface CreationHistory {
+  _id: string;
+  formData: CreationFormData;
+  result: GenerationResult;
+  title: string;  // 用于显示的标题（从 result.title.text 提取）
+  createdAt: Date;
+}
