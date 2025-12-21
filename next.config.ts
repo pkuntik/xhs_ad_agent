@@ -6,6 +6,11 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '2mb',
     },
   },
+  // 让 Vercel serverless 函数包含 prompts 目录
+  outputFileTracingIncludes: {
+    '/api/*': ['./prompts/**/*'],
+    '/(dashboard)/*': ['./prompts/**/*'],
+  },
   images: {
     remotePatterns: [
       {
