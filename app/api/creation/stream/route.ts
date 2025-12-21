@@ -128,56 +128,68 @@ export async function POST(request: Request) {
           const fixJsonString = (text: string): string => {
             let fixed = ''
             let inString = false
-            let escape = false
+            let i = 0
 
-            for (let i = 0; i < text.length; i++) {
+            while (i < text.length) {
               const char = text[i]
               const code = char.charCodeAt(0)
 
-              if (escape) {
-                // 处理转义序列
-                // 只有这些是合法的 JSON 转义: \" \\ \/ \b \f \n \r \t \uXXXX
-                if (char === '"' || char === '\\' || char === '/' ||
-                    char === 'b' || char === 'f' || char === 'n' ||
-                    char === 'r' || char === 't' || char === 'u') {
-                  fixed += char
-                } else {
-                  // 非法转义，保留原样（可能是 AI 输出错误）
-                  fixed += char
+              if (inString) {
+                // 在字符串内部
+                if (char === '\\' && i + 1 < text.length) {
+                  const nextChar = text[i + 1]
+                  const nextCode = nextChar.charCodeAt(0)
+
+                  // 如果下一个字符是控制字符，说明 AI 写了 \<实际换行>，应该转换为 \n
+                  if (nextCode < 32) {
+                    switch (nextCode) {
+                      case 10: fixed += '\\n'; break
+                      case 13: fixed += '\\r'; break
+                      case 9:  fixed += '\\t'; break
+                      default: fixed += '\\u' + nextCode.toString(16).padStart(4, '0')
+                    }
+                    i += 2
+                    continue
+                  }
+
+                  // 正常的转义序列，保留两个字符
+                  fixed += char + nextChar
+                  i += 2
+                  continue
                 }
-                escape = false
-                continue
-              }
 
-              if (char === '\\') {
-                escape = true
-                fixed += char
-                continue
-              }
-
-              if (char === '"') {
-                inString = !inString
-                fixed += char
-                continue
-              }
-
-              // 如果在字符串内，处理控制字符（0x00-0x1F）
-              if (inString && code < 32) {
-                // 转义控制字符
-                switch (code) {
-                  case 8:  fixed += '\\b'; break  // backspace
-                  case 9:  fixed += '\\t'; break  // tab
-                  case 10: fixed += '\\n'; break  // newline
-                  case 12: fixed += '\\f'; break  // form feed
-                  case 13: fixed += '\\r'; break  // carriage return
-                  default:
-                    // 其他控制字符用 unicode 转义
-                    fixed += '\\u' + code.toString(16).padStart(4, '0')
+                if (char === '"') {
+                  // 字符串结束
+                  inString = false
+                  fixed += char
+                  i++
+                  continue
                 }
-                continue
-              }
 
-              fixed += char
+                // 处理字符串中的控制字符（没有前导反斜杠的情况）
+                if (code < 32) {
+                  switch (code) {
+                    case 10: fixed += '\\n'; break
+                    case 13: fixed += '\\r'; break
+                    case 9:  fixed += '\\t'; break
+                    case 8:  fixed += '\\b'; break
+                    case 12: fixed += '\\f'; break
+                    default: fixed += '\\u' + code.toString(16).padStart(4, '0')
+                  }
+                  i++
+                  continue
+                }
+
+                fixed += char
+                i++
+              } else {
+                // 在字符串外部
+                if (char === '"') {
+                  inString = true
+                }
+                fixed += char
+                i++
+              }
             }
 
             // 如果还在字符串内，说明缺少闭合引号

@@ -343,29 +343,29 @@ export function ImagePlanCard({
                     />
                   </div>
                   <div>
-                    <Label className="text-xs font-semibold">内容描述</Label>
+                    <Label className="text-xs font-semibold">主视觉</Label>
                     <Textarea
                       value={editedImages[i]?.content || ''}
                       onChange={(e) => updateImage(i, 'content', e.target.value)}
-                      placeholder="配图内容描述"
+                      placeholder="主视觉元素描述"
                       className="mt-1 min-h-[60px]"
                     />
                   </div>
                   <div>
-                    <Label className="text-xs font-semibold">文字叠加</Label>
+                    <Label className="text-xs font-semibold">文案</Label>
                     <Input
                       value={editedImages[i]?.overlay || ''}
                       onChange={(e) => updateImage(i, 'overlay', e.target.value)}
-                      placeholder="图片上的文字"
+                      placeholder="图片上的文案"
                       className="mt-1"
                     />
                   </div>
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <p><strong>内容：</strong>{editedImages[i]?.content || img.content}</p>
+                  <p><strong>主视觉：</strong>{editedImages[i]?.content || img.content}</p>
                   {(editedImages[i]?.overlay || img.overlay) && (
-                    <p><strong>文字：</strong>{editedImages[i]?.overlay || img.overlay}</p>
+                    <p><strong>文案：</strong>{editedImages[i]?.overlay || img.overlay}</p>
                   )}
                 </div>
               )}

@@ -26,9 +26,10 @@ import { Loader2, Sparkles, Save, History, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { saveWork } from '@/actions/work'
 import { saveCreationHistory, getCreationHistoryList, deleteCreationHistory } from '@/actions/creation-history'
-import { ImageGenerator } from '@/components/image/ImageGenerator'
 import { CustomAudienceSelector } from '@/components/form/CustomAudienceSelector'
 import { ContentCard } from '@/components/works/content-card'
+import { CoverPlanCard } from '@/components/works/cover-plan-card'
+import { ImagePlanCard } from '@/components/works/image-plan-card'
 import { processImageUrl } from '@/lib/utils/image'
 import type {
   CreationFormData,
@@ -225,14 +226,64 @@ export default function CreationPage() {
       }
 
       const decoder = new TextDecoder()
+      let buffer = ''  // 用于累积不完整的消息
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n')
+        buffer += decoder.decode(value, { stream: true })
 
+        // 按 \n\n 分割完整的 SSE 消息
+        const messages = buffer.split('\n\n')
+        // 最后一个可能是不完整的消息，保留到下一次处理
+        buffer = messages.pop() || ''
+
+        for (const message of messages) {
+          const lines = message.split('\n')
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6)
+              if (data === '[DONE]') continue
+
+              try {
+                const parsed = JSON.parse(data)
+
+                if (parsed.type === 'progress') {
+                  setProgress(parsed.percent)
+                  setProgressLabel(parsed.label)
+                } else if (parsed.type === 'result') {
+                  if (parsed.rawText) {
+                    setRawText(parsed.rawText)
+                  }
+                  if (parsed.result) {
+                    setResult(parsed.result)
+                    setEditedTitle(parsed.result.title?.text || '')
+                    setEditedContent(parsed.result.content?.body || '')
+                    setEditedTopics(parsed.result.topics?.tags.join(' ') || '')
+                    // 自动保存到历史记录
+                    saveCreationHistory(formData, parsed.result).catch(err => {
+                      console.error('保存历史记录失败:', err)
+                    })
+                  }
+                  // 如果解析失败，显示错误信息
+                  if (parsed.parseError && !parsed.result) {
+                    setError(`JSON 解析失败: ${parsed.parseError}`)
+                  }
+                } else if (parsed.type === 'error') {
+                  setError(parsed.error || '生成失败')
+                }
+              } catch (parseErr) {
+                console.error('SSE 消息解析失败:', parseErr, 'data:', data.substring(0, 200))
+              }
+            }
+          }
+        }
+      }
+
+      // 处理最后可能残留的完整消息
+      if (buffer.trim()) {
+        const lines = buffer.split('\n')
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6)
@@ -240,11 +291,7 @@ export default function CreationPage() {
 
             try {
               const parsed = JSON.parse(data)
-
-              if (parsed.type === 'progress') {
-                setProgress(parsed.percent)
-                setProgressLabel(parsed.label)
-              } else if (parsed.type === 'result') {
+              if (parsed.type === 'result') {
                 if (parsed.rawText) {
                   setRawText(parsed.rawText)
                 }
@@ -253,20 +300,18 @@ export default function CreationPage() {
                   setEditedTitle(parsed.result.title?.text || '')
                   setEditedContent(parsed.result.content?.body || '')
                   setEditedTopics(parsed.result.topics?.tags.join(' ') || '')
-                  // 自动保存到历史记录
                   saveCreationHistory(formData, parsed.result).catch(err => {
                     console.error('保存历史记录失败:', err)
                   })
                 }
-                // 如果解析失败，显示错误信息
                 if (parsed.parseError && !parsed.result) {
                   setError(`JSON 解析失败: ${parsed.parseError}`)
                 }
               } else if (parsed.type === 'error') {
                 setError(parsed.error || '生成失败')
               }
-            } catch {
-              // 忽略解析错误
+            } catch (parseErr) {
+              console.error('SSE 最后消息解析失败:', parseErr)
             }
           }
         }
@@ -371,6 +416,13 @@ export default function CreationPage() {
         ...result,
         images: updatedImages,
       })
+    }
+  }
+
+  // 内容变更回调（编辑或重新生成规划时）
+  function handleContentChange(updates: Partial<GenerationResult>) {
+    if (result) {
+      setResult({ ...result, ...updates })
     }
   }
 
@@ -693,94 +745,26 @@ export default function CreationPage() {
 
               {/* 封面规划 */}
               {result.cover && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">封面规划</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex gap-4">
-                      {/* 左侧：图片生成 */}
-                      <div className="w-40 flex-shrink-0">
-                        <ImageGenerator
-                          prompt={result.cover.content}
-                          imageType="cover"
-                          context={{
-                            formData,
-                            positioning: result.positioning,
-                            cover: result.cover,
-                            title: result.title,
-                            content: result.content,
-                            allImages: result.images,
-                          }}
-                          onImageGenerated={handleCoverImageGenerated}
-                          initialImageUrl={result.cover.imageUrl}
-                          initialPrompt={result.cover.imagePrompt}
-                          initialDesignId={result.cover.chuangkitDesignId}
-                          faceSeed={faceSeed || undefined}
-                          onFaceSeedGenerated={setFaceSeed}
-                          compact
-                        />
-                      </div>
-                      {/* 右侧：规划信息 */}
-                      <div className="flex-1 space-y-2 text-sm">
-                        <p><strong>类型：</strong>{result.cover.type}</p>
-                        <p><strong>主视觉：</strong>{result.cover.content}</p>
-                        <p><strong>文案：</strong>{result.cover.overlay}</p>
-                        <p><strong>配色：</strong>{result.cover.colorScheme}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <CoverPlanCard
+                  draftContent={result}
+                  onContentChange={handleContentChange}
+                  onImageGenerated={handleCoverImageGenerated}
+                  faceSeed={faceSeed || undefined}
+                  onFaceSeedGenerated={setFaceSeed}
+                  compact
+                />
               )}
 
               {/* 配图规划 */}
               {result.images && result.images.length > 0 && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">配图规划 ({result.images.length} 张)</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {result.images.map((img, i) => (
-                      <div key={i} className="flex gap-4 p-3 bg-muted/50 rounded-lg">
-                        {/* 左侧：图片生成 */}
-                        <div className="w-40 flex-shrink-0">
-                          <ImageGenerator
-                            prompt={img.content}
-                            imageType="content"
-                            context={{
-                              formData,
-                              positioning: result.positioning,
-                              cover: result.cover,
-                              title: result.title,
-                              content: result.content,
-                              allImages: result.images,
-                              currentImage: {
-                                index: img.index || i + 1,
-                                type: img.type,
-                                content: img.content,
-                                overlay: img.overlay,
-                                tips: img.tips,
-                              },
-                            }}
-                            onImageGenerated={(url, prompt, designId) => handleImageGenerated(i, url, prompt, designId)}
-                            initialImageUrl={img.imageUrl}
-                            initialPrompt={img.imagePrompt}
-                            initialDesignId={img.chuangkitDesignId}
-                            faceSeed={faceSeed || undefined}
-                            onFaceSeedGenerated={setFaceSeed}
-                            compact
-                          />
-                        </div>
-                        {/* 右侧：规划信息 */}
-                        <div className="flex-1 text-sm">
-                          <p className="font-medium mb-2">图 {img.index || i + 1}: {img.type}</p>
-                          <p className="text-muted-foreground">{img.content}</p>
-                          {img.overlay && <p className="text-muted-foreground mt-1">文字：{img.overlay}</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
+                <ImagePlanCard
+                  draftContent={result}
+                  onContentChange={handleContentChange}
+                  onImageGenerated={handleImageGenerated}
+                  faceSeed={faceSeed || undefined}
+                  onFaceSeedGenerated={setFaceSeed}
+                  compact
+                />
               )}
 
               {/* 评论区运营 */}
