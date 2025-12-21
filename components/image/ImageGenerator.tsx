@@ -164,7 +164,7 @@ export function ImageGenerator({
   }
 
   const handleGenerate = async (additionalFeedback?: FeedbackWithReason, referenceImageAnalysis?: string) => {
-    if (!prompt.trim()) {
+    if (!prompt?.trim()) {
       setError('请提供图片描述')
       return
     }
@@ -465,7 +465,7 @@ export function ImageGenerator({
       <div className={compact ? "flex flex-wrap gap-1 relative" : "flex gap-2 relative"}>
         <Button
           onClick={handleButtonClick}
-          disabled={isGenerating || isChangingFace || !prompt.trim()}
+          disabled={isGenerating || isChangingFace || !prompt?.trim()}
           className="flex-1"
           variant="outline"
           size="sm"

@@ -227,7 +227,7 @@ export function ImagePlanCard({
             {/* 左侧：图片生成 */}
             <div className={compact ? 'w-40 flex-shrink-0' : 'w-48 flex-shrink-0'}>
               <ImageGenerator
-                prompt={editedImages[i]?.content || img.content}
+                prompt={editedImages[i]?.content || img.content || ''}
                 imageType="content"
                 context={{
                   positioning: draftContent.positioning,
@@ -237,8 +237,8 @@ export function ImagePlanCard({
                   allImages: draftContent.images,
                   currentImage: {
                     index: img.index || i + 1,
-                    type: editedImages[i]?.type || img.type,
-                    content: editedImages[i]?.content || img.content,
+                    type: editedImages[i]?.type || img.type || '',
+                    content: editedImages[i]?.content || img.content || '',
                     overlay: editedImages[i]?.overlay || img.overlay,
                     tips: img.tips,
                   },

@@ -280,7 +280,7 @@ export function CoverPlanCard({
           {/* 左侧：图片生成 */}
           <div className={compact ? 'w-40 flex-shrink-0' : 'w-48 flex-shrink-0'}>
             <ImageGenerator
-              prompt={editedContent || cover.content}
+              prompt={editedContent || cover.content || ''}
               imageType="cover"
               context={{
                 positioning: draftContent.positioning,
