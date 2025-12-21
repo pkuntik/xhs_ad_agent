@@ -168,6 +168,12 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
           setPublishing(false)
         },
       })
+
+      // 唤起后延迟重置按钮状态（因为用户切换到小红书 App 后回调可能不会触发）
+      setTimeout(() => {
+        setPublished(true)
+        setPublishing(false)
+      }, 2000)
     } catch (err) {
       setError('发布失败，请重试')
       setPublishing(false)

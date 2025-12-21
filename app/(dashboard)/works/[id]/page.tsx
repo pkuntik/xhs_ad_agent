@@ -432,6 +432,46 @@ export default function WorkDetailPage({ params }: { params: Promise<{ id: strin
               compact
             />
           )}
+
+          {/* 评论区运营 */}
+          {draftContent?.comments && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">评论区运营</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {draftContent.comments.pinnedComment && (
+                  <div className="p-2 bg-yellow-50 rounded">
+                    <strong>置顶：</strong>{draftContent.comments.pinnedComment}
+                  </div>
+                )}
+                {draftContent.comments.qaList.map((qa, i) => (
+                  <div key={i} className="p-2 bg-muted/50 rounded">
+                    <p><strong>Q：</strong>{qa.question}</p>
+                    <p><strong>A：</strong>{qa.answer}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 私信模板 */}
+          {draftContent?.privateMessage && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">私信模板</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <p><strong>开场白：</strong>{draftContent.privateMessage.greeting}</p>
+                {draftContent.privateMessage.templates.map((tpl, i) => (
+                  <div key={i} className="p-2 bg-muted/50 rounded">
+                    <p className="text-xs text-muted-foreground">{tpl.scenario}</p>
+                    <p>{tpl.message}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* 右侧：发布码和状态 */}
