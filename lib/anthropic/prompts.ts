@@ -152,7 +152,5 @@ export function buildUserMessage(formData: CreationFormData, learningData?: Lear
 
   return `请根据我的需求生成小红书图文内容方案：
 
-${userInfo}${learningContext}${generationOptionsText}
-
-重要要求：严格按照 JSON 格式输出`;
+${userInfo}${learningContext}${generationOptionsText}`;
 }

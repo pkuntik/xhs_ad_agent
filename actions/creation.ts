@@ -325,15 +325,9 @@ ${context.title?.text || ''}
 【正文摘要】
 ${context.content?.body?.slice(0, 200) || ''}
 
-请以 JSON 格式返回封面规划，包含以下字段：
-{
-  "type": "封面类型（如：产品展示、人物出镜、场景图、对比图等）",
-  "content": "主视觉描述（详细描述封面的主要视觉元素）",
-  "overlay": "封面文案（吸引人的标题文字）",
-  "colorScheme": "配色方案（如：粉白系、蓝绿系、暖色调等）"
-}
+请生成封面规划，包含：类型、主视觉描述、封面文案、配色方案。
 
-只返回 JSON，不要其他内容。`
+请以 JSON 格式返回，只返回 JSON，不要其他内容。`
     } else {
       const currentImage = context.images?.[imageIndex || 0]
       const totalImages = context.images?.length || 1
@@ -356,14 +350,9 @@ ${context.content?.body?.slice(0, 300) || ''}
 - 内容：${currentImage?.content || ''}
 - 文字叠加：${currentImage?.overlay || '无'}
 
-请以 JSON 格式返回新的配图规划，包含以下字段：
-{
-  "type": "配图类型（如：产品展示、步骤图、效果对比、场景图等）",
-  "content": "配图内容描述（详细描述这张图应该展示什么）",
-  "overlay": "文字叠加（图片上需要显示的文字，可以为空字符串）"
-}
+请生成新的配图规划，包含：类型、内容描述、文字叠加。
 
-只返回 JSON，不要其他内容。`
+请以 JSON 格式返回，只返回 JSON，不要其他内容。`
     }
 
     // 调用 AI
