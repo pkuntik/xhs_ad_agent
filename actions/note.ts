@@ -4,7 +4,7 @@ import { ObjectId } from 'mongodb'
 import { revalidatePath } from 'next/cache'
 import { getDb, COLLECTIONS } from '@/lib/db/mongodb'
 import { getCurrentUser } from '@/lib/auth/session'
-import { fetchNoteDetail, extractNoteId } from '@/lib/xhs/api/note'
+import { fetchNoteDetail, extractNoteId, extractNoteIdFromInput } from '@/lib/xhs/api/note'
 import type {
   NoteDetail,
   CachedNoteDetail,
@@ -22,10 +22,11 @@ interface CreateLinkedAuthorInput {
   avatar: string
 }
 
-// 验证笔记并获取详情
-export async function fetchAndValidateNote(noteUrl: string): Promise<{
+// 验证笔记并获取详情（支持混合文本、短链接等各种格式）
+export async function fetchAndValidateNote(noteInput: string): Promise<{
   success: boolean
   noteId?: string
+  noteUrl?: string
   noteDetail?: NoteDetail
   cachedDetail?: CachedNoteDetail
   snapshot?: NoteSnapshot
@@ -38,11 +39,14 @@ export async function fetchAndValidateNote(noteUrl: string): Promise<{
   error?: string
 }> {
   try {
-    // 提取笔记ID
-    const noteId = extractNoteId(noteUrl)
-    if (!noteId) {
-      return { success: false, error: '无效的笔记链接格式' }
+    // 使用增强的提取函数处理各种输入格式（混合文本、短链接等）
+    const extractResult = await extractNoteIdFromInput(noteInput)
+    if (!extractResult.success || !extractResult.noteId) {
+      return { success: false, error: extractResult.error || '无法获取笔记ID' }
     }
+
+    const noteId = extractResult.noteId
+    const noteUrl = extractResult.resolvedUrl || noteInput.trim()
 
     // 获取笔记详情
     const result = await fetchNoteDetail(noteId)
@@ -90,6 +94,7 @@ export async function fetchAndValidateNote(noteUrl: string): Promise<{
       return {
         success: true,
         noteId,
+        noteUrl,
         noteDetail: detail,
         cachedDetail,
         snapshot,
@@ -106,6 +111,7 @@ export async function fetchAndValidateNote(noteUrl: string): Promise<{
     return {
       success: true,
       noteId,
+      noteUrl,
       noteDetail: detail,
       cachedDetail,
       snapshot,

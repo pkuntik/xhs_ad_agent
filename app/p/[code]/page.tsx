@@ -10,8 +10,11 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Send, CheckCircle, Link as LinkIcon, Plus, ExternalLink, Smartphone } from 'lucide-react'
 import { getPublishConfig, markWorkScanned, bindPublishedNote } from '@/actions/work'
+import { fetchAndValidateNote } from '@/actions/note'
+import { NoteBindingDialog } from '@/components/works/note-binding-dialog'
 import type { Work, Publication } from '@/types/work'
 import type { VerifyConfig } from '@/lib/xhs/signature'
+import type { NoteDetail, CachedNoteDetail, NoteSnapshot } from '@/types/note'
 
 declare global {
   interface Window {
@@ -60,6 +63,17 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
   const [binding, setBinding] = useState(false)
   const [publications, setPublications] = useState<Publication[]>([])
   const [showAddMore, setShowAddMore] = useState(false)  // 已发布后是否显示添加更多
+
+  // 笔记绑定确认对话框状态
+  const [showBindingDialog, setShowBindingDialog] = useState(false)
+  const [pendingNoteData, setPendingNoteData] = useState<{
+    noteId: string
+    noteUrl: string
+    noteDetail: NoteDetail
+    cachedDetail: CachedNoteDetail
+    snapshot: NoteSnapshot
+    existingAccount?: { _id: string; name: string; visitorUserId: string; status: string }
+  } | null>(null)
 
   const loadWork = useCallback(async () => {
     try {
@@ -180,33 +194,100 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
     }
   }
 
-  async function handleBindNote() {
+  // 获取笔记详情并显示确认对话框
+  async function handleFetchNote() {
     if (!work || !noteUrl.trim()) return
 
     setBinding(true)
     setError('')
 
     try {
-      const result = await bindPublishedNote(work.publishCode, { noteUrl: noteUrl.trim() })
+      const result = await fetchAndValidateNote(noteUrl.trim())
+
+      if (!result.success) {
+        setError(result.error || '获取笔记详情失败')
+        return
+      }
+
+      if (!result.noteId || !result.noteDetail || !result.cachedDetail || !result.snapshot) {
+        setError('笔记数据不完整')
+        return
+      }
+
+      // 检查是否已绑定
+      const existingNoteIds = publications.map(pub => pub.noteId).filter(Boolean)
+      if (existingNoteIds.includes(result.noteId)) {
+        setError('该笔记已绑定，请勿重复添加')
+        return
+      }
+
+      setPendingNoteData({
+        noteId: result.noteId,
+        noteUrl: result.noteUrl || noteUrl.trim(),
+        noteDetail: result.noteDetail,
+        cachedDetail: result.cachedDetail,
+        snapshot: result.snapshot,
+        existingAccount: result.existingAccount,
+      })
+      setShowBindingDialog(true)
+    } catch {
+      setError('获取笔记详情失败')
+    } finally {
+      setBinding(false)
+    }
+  }
+
+  // 确认绑定
+  async function handleConfirmBind(options: {
+    noteId: string
+    noteUrl: string
+    noteDetail: CachedNoteDetail
+    snapshot: NoteSnapshot
+    accountId?: string
+  }) {
+    if (!work) return
+
+    setShowBindingDialog(false)
+    setBinding(true)
+    setError('')
+
+    try {
+      const result = await bindPublishedNote(work.publishCode, {
+        noteUrl: options.noteUrl,
+        noteId: options.noteId,
+        accountId: options.accountId,
+        noteDetail: options.noteDetail,
+        snapshot: options.snapshot,
+      })
 
       if (result.success) {
-        // 添加到本地 publications 列表
         const newPublication: Publication = {
-          noteUrl: noteUrl.trim(),
+          noteId: options.noteId,
+          noteUrl: options.noteUrl,
+          accountId: options.accountId,
           publishedAt: new Date(),
+          noteDetail: options.noteDetail,
+          snapshots: [options.snapshot],
+          lastSyncAt: new Date(),
         }
         setPublications([...publications, newPublication])
-        setNoteUrl('')  // 清空输入框以便添加更多
+        setNoteUrl('')
         setShowAddMore(false)
+        setPendingNoteData(null)
         setWork({ ...work, status: 'published' })
       } else {
         setError(result.error || '绑定失败')
       }
-    } catch (err) {
+    } catch {
       setError('绑定失败，请重试')
     } finally {
       setBinding(false)
     }
+  }
+
+  function handleCancelBind() {
+    setShowBindingDialog(false)
+    setPendingNoteData(null)
   }
 
   if (loading) {
@@ -458,13 +539,13 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
                 <div className="flex gap-2">
                   <Button
                     className="flex-1"
-                    onClick={handleBindNote}
+                    onClick={handleFetchNote}
                     disabled={binding || !noteUrl.trim()}
                   >
                     {binding ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        绑定中...
+                        获取笔记信息...
                       </>
                     ) : (
                       '确认绑定'
@@ -534,6 +615,22 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
           <p>请确保已安装小红书客户端</p>
         </footer>
       </div>
+
+      {/* 笔记绑定确认对话框 */}
+      {pendingNoteData && (
+        <NoteBindingDialog
+          open={showBindingDialog}
+          onOpenChange={setShowBindingDialog}
+          noteUrl={pendingNoteData.noteUrl}
+          noteId={pendingNoteData.noteId}
+          noteDetail={pendingNoteData.noteDetail}
+          cachedDetail={pendingNoteData.cachedDetail}
+          snapshot={pendingNoteData.snapshot}
+          existingAccount={pendingNoteData.existingAccount}
+          onConfirm={handleConfirmBind}
+          onCancel={handleCancelBind}
+        />
+      )}
     </>
   )
 }

@@ -10,6 +10,67 @@ export interface FetchNoteDetailResult {
 }
 
 /**
+ * 从文本中提取小红书链接（支持混合文本）
+ * 例如: "减掉30斤后我才知道｜这些弯路你别走了 曾经的我也是... http://xhslink.com/o/4jSAloOZrUC 复制后打开【小红书】查看笔记！"
+ */
+export function extractXhsUrl(text: string): string | null {
+  // 匹配各种可能的小红书 URL
+  const urlPatterns = [
+    // xhslink.com 短链接
+    /https?:\/\/xhslink\.com\/[^\s\u4e00-\u9fa5]+/i,
+    // 标准小红书链接
+    /https?:\/\/(?:www\.)?xiaohongshu\.com\/[^\s\u4e00-\u9fa5]+/i,
+    // 发现页链接
+    /https?:\/\/(?:www\.)?xiaohongshu\.com\/explore\/[a-f0-9]+/i,
+    // discovery 链接
+    /https?:\/\/(?:www\.)?xiaohongshu\.com\/discovery\/item\/[a-f0-9]+/i,
+  ]
+
+  for (const pattern of urlPatterns) {
+    const match = text.match(pattern)
+    if (match) {
+      return match[0]
+    }
+  }
+
+  return null
+}
+
+/**
+ * 解析短链接获取重定向后的目标 URL
+ */
+export async function resolveShortLink(shortUrl: string): Promise<string | null> {
+  try {
+    // 使用 HEAD 请求获取重定向位置
+    const response = await fetch(shortUrl, {
+      method: 'HEAD',
+      redirect: 'manual',
+    })
+
+    // 检查是否有重定向
+    const location = response.headers.get('location')
+    if (location) {
+      return location
+    }
+
+    // 如果 HEAD 请求没有重定向，尝试 GET 请求
+    const getResponse = await fetch(shortUrl, {
+      redirect: 'manual',
+    })
+
+    const getLocation = getResponse.headers.get('location')
+    if (getLocation) {
+      return getLocation
+    }
+
+    return null
+  } catch (error) {
+    console.error('resolveShortLink error:', error)
+    return null
+  }
+}
+
+/**
  * 从小红书笔记URL中提取笔记ID
  */
 export function extractNoteId(url: string): string | null {
@@ -36,6 +97,40 @@ export function extractNoteId(url: string): string | null {
   }
 
   return null
+}
+
+/**
+ * 从输入文本中提取笔记ID（支持混合文本、短链接等）
+ * 这是一个高级函数，会自动处理各种格式
+ */
+export async function extractNoteIdFromInput(input: string): Promise<{
+  success: boolean
+  noteId?: string
+  resolvedUrl?: string
+  error?: string
+}> {
+  // 先尝试从输入中提取 URL
+  const url = extractXhsUrl(input) || input.trim()
+
+  // 尝试直接从 URL 提取 noteId
+  let noteId = extractNoteId(url)
+  if (noteId) {
+    return { success: true, noteId, resolvedUrl: url }
+  }
+
+  // 如果是短链接，尝试解析
+  if (url.includes('xhslink.com')) {
+    const resolvedUrl = await resolveShortLink(url)
+    if (resolvedUrl) {
+      noteId = extractNoteId(resolvedUrl)
+      if (noteId) {
+        return { success: true, noteId, resolvedUrl }
+      }
+    }
+    return { success: false, error: '无法解析短链接，请直接粘贴笔记完整链接' }
+  }
+
+  return { success: false, error: '无效的笔记链接格式' }
 }
 
 /**
