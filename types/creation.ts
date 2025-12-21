@@ -91,7 +91,6 @@ export interface GenerationResult {
   };
   content?: {
     body: string;
-    wordCount: number;
     structure: string;
   };
   images?: ImagePlan[];

@@ -241,7 +241,7 @@ function buildPromptUserMessage(
     lines.push('')
     lines.push('## 正文内容')
     lines.push(`- 结构: ${content.structure}`)
-    lines.push(`- 字数: ${content.wordCount}`)
+    lines.push(`- 字数: ${content.body.length}`)
     lines.push('')
     lines.push('### 正文全文')
     lines.push(content.body)
