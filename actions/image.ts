@@ -19,7 +19,7 @@ interface ImageGenerateParams {
     keywords?: string[]
     targetAudience?: string
     tone?: string
-    coverCopywriting?: string
+    coverOverlay?: string
     colorScheme?: string
     overlay?: string
     imageContent?: string
@@ -49,7 +49,7 @@ interface ImageGenerationContext {
     type: string
     content: string
     overlay?: string
-    tips: string
+    tips?: string
   }
   visualStyle?: string
 }
@@ -224,11 +224,10 @@ function buildPromptUserMessage(
     lines.push('')
     lines.push('## 封面规划')
     lines.push(`- 封面类型: ${cover.type}`)
-    lines.push(`- 主视觉: ${cover.mainVisual}`)
-    lines.push(`- 封面文案: ${cover.copywriting}`)
-    lines.push(`- 文字位置: ${cover.textPosition}`)
+    lines.push(`- 主视觉: ${cover.content}`)
+    lines.push(`- 封面文案: ${cover.overlay}`)
     lines.push(`- 配色方案: ${cover.colorScheme}`)
-    lines.push(`- 设计要点: ${cover.designTips}`)
+    lines.push(`- 设计要点: ${cover.tips}`)
   }
 
   if (title) {
@@ -281,11 +280,10 @@ function buildPromptUserMessage(
     lines.push('## 【当前要生成：封面图】')
     lines.push('')
     lines.push('封面图的核心要求：')
-    lines.push(`1. 必须体现封面文案「${cover.copywriting}」的核心内容`)
+    lines.push(`1. 必须体现封面文案「${cover.overlay}」的核心内容`)
     lines.push('2. 封面关键字必须使用视觉装饰元素突出强调')
-    lines.push(`3. 主视觉元素：${cover.mainVisual}`)
-    lines.push(`4. 文字位置：${cover.textPosition}`)
-    lines.push(`5. 配色方案：${cover.colorScheme}`)
+    lines.push(`3. 主视觉元素：${cover.content}`)
+    lines.push(`4. 配色方案：${cover.colorScheme}`)
   }
 
   if (visualStyle) {
@@ -393,7 +391,7 @@ ${context?.topic || '通用内容'}
 - 关键词：${context?.keywords?.join('、') || ''}
 
 【封面文案】
-${context?.coverCopywriting || ''}
+${context?.coverOverlay || ''}
 
 【视觉风格】
 - 配色方案：${context?.colorScheme || '明亮清新'}

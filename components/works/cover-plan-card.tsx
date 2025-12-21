@@ -14,8 +14,8 @@ import type { GenerationResult } from '@/types/creation'
 // 重新生成封面规划的原因选项
 const COVER_REGENERATE_REASONS = [
   { value: 'type', label: '类型不合适' },
-  { value: 'mainVisual', label: '主视觉描述不好' },
-  { value: 'copywriting', label: '文案不够吸引人' },
+  { value: 'content', label: '内容描述不好' },
+  { value: 'overlay', label: '文案不够吸引人' },
   { value: 'colorScheme', label: '配色不协调' },
   { value: 'other', label: '其他' },
 ]
@@ -46,8 +46,8 @@ export function CoverPlanCard({
 
   // 编辑状态
   const [editedType, setEditedType] = useState(draftContent.cover?.type || '')
-  const [editedMainVisual, setEditedMainVisual] = useState(draftContent.cover?.mainVisual || '')
-  const [editedCopywriting, setEditedCopywriting] = useState(draftContent.cover?.copywriting || '')
+  const [editedContent, setEditedContent] = useState(draftContent.cover?.content || '')
+  const [editedOverlay, setEditedOverlay] = useState(draftContent.cover?.overlay || '')
   const [editedColorScheme, setEditedColorScheme] = useState(draftContent.cover?.colorScheme || '')
 
   // 重新生成状态
@@ -69,8 +69,8 @@ export function CoverPlanCard({
         cover: {
           ...cover,
           type: editedType,
-          mainVisual: editedMainVisual,
-          copywriting: editedCopywriting,
+          content: editedContent,
+          overlay: editedOverlay,
           colorScheme: editedColorScheme,
         },
       })
@@ -80,8 +80,8 @@ export function CoverPlanCard({
   // 开始编辑
   function startEditing() {
     setEditedType(cover.type || '')
-    setEditedMainVisual(cover.mainVisual || '')
-    setEditedCopywriting(cover.copywriting || '')
+    setEditedContent(cover.content || '')
+    setEditedOverlay(cover.overlay || '')
     setEditedColorScheme(cover.colorScheme || '')
     setInternalEditing(true)
   }
@@ -95,8 +95,8 @@ export function CoverPlanCard({
   // 取消编辑
   function cancelEditing() {
     setEditedType(cover.type || '')
-    setEditedMainVisual(cover.mainVisual || '')
-    setEditedCopywriting(cover.copywriting || '')
+    setEditedContent(cover.content || '')
+    setEditedOverlay(cover.overlay || '')
     setEditedColorScheme(cover.colorScheme || '')
     setInternalEditing(false)
   }
@@ -135,8 +135,8 @@ export function CoverPlanCard({
       if (result.success && result.plan) {
         // 更新编辑状态
         setEditedType(result.plan.type || '')
-        setEditedMainVisual(result.plan.mainVisual || '')
-        setEditedCopywriting(result.plan.copywriting || '')
+        setEditedContent(result.plan.content || '')
+        setEditedOverlay(result.plan.overlay || '')
         setEditedColorScheme(result.plan.colorScheme || '')
 
         // 通知父组件
@@ -146,8 +146,8 @@ export function CoverPlanCard({
             cover: {
               ...cover,
               type: result.plan.type || cover.type,
-              mainVisual: result.plan.mainVisual || cover.mainVisual,
-              copywriting: result.plan.copywriting || cover.copywriting,
+              content: result.plan.content || cover.content,
+              overlay: result.plan.overlay || cover.overlay,
               colorScheme: result.plan.colorScheme || cover.colorScheme,
             },
           })
@@ -280,7 +280,7 @@ export function CoverPlanCard({
           {/* 左侧：图片生成 */}
           <div className={compact ? 'w-40 flex-shrink-0' : 'w-48 flex-shrink-0'}>
             <ImageGenerator
-              prompt={editedMainVisual || cover.mainVisual}
+              prompt={editedContent || cover.content}
               imageType="cover"
               context={{
                 positioning: draftContent.positioning,
@@ -315,8 +315,8 @@ export function CoverPlanCard({
                 <div>
                   <Label className="text-xs font-semibold">主视觉</Label>
                   <Textarea
-                    value={editedMainVisual}
-                    onChange={(e) => setEditedMainVisual(e.target.value)}
+                    value={editedContent}
+                    onChange={(e) => setEditedContent(e.target.value)}
                     placeholder="主视觉描述"
                     className="mt-1 min-h-[60px]"
                   />
@@ -324,8 +324,8 @@ export function CoverPlanCard({
                 <div>
                   <Label className="text-xs font-semibold">文案</Label>
                   <Textarea
-                    value={editedCopywriting}
-                    onChange={(e) => setEditedCopywriting(e.target.value)}
+                    value={editedOverlay}
+                    onChange={(e) => setEditedOverlay(e.target.value)}
                     placeholder="封面文案"
                     className="mt-1 min-h-[60px]"
                   />
@@ -343,8 +343,8 @@ export function CoverPlanCard({
             ) : (
               <>
                 <p><strong>类型：</strong>{editedType || cover.type}</p>
-                <p><strong>主视觉：</strong>{editedMainVisual || cover.mainVisual}</p>
-                <p><strong>文案：</strong>{editedCopywriting || cover.copywriting}</p>
+                <p><strong>主视觉：</strong>{editedContent || cover.content}</p>
+                <p><strong>文案：</strong>{editedOverlay || cover.overlay}</p>
                 <p><strong>配色：</strong>{editedColorScheme || cover.colorScheme}</p>
               </>
             )}

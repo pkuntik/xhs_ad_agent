@@ -124,17 +124,27 @@ export async function POST(request: Request) {
           let result = null
           let parseError = ''
 
-          // 辅助函数：修复 JSON 字符串中的换行符
-          function fixJsonNewlines(text: string): string {
+          // 辅助函数：修复 JSON 字符串中的控制字符
+          const fixJsonString = (text: string): string => {
             let fixed = ''
             let inString = false
             let escape = false
 
             for (let i = 0; i < text.length; i++) {
               const char = text[i]
+              const code = char.charCodeAt(0)
 
               if (escape) {
-                fixed += char
+                // 处理转义序列
+                // 只有这些是合法的 JSON 转义: \" \\ \/ \b \f \n \r \t \uXXXX
+                if (char === '"' || char === '\\' || char === '/' ||
+                    char === 'b' || char === 'f' || char === 'n' ||
+                    char === 'r' || char === 't' || char === 'u') {
+                  fixed += char
+                } else {
+                  // 非法转义，保留原样（可能是 AI 输出错误）
+                  fixed += char
+                }
                 escape = false
                 continue
               }
@@ -151,23 +161,96 @@ export async function POST(request: Request) {
                 continue
               }
 
-              // 如果在字符串内，将真实换行替换为 \n
-              if (inString && char === '\n') {
-                fixed += '\\n'
-                continue
-              }
-              if (inString && char === '\r') {
-                fixed += '\\r'
-                continue
-              }
-              if (inString && char === '\t') {
-                fixed += '\\t'
+              // 如果在字符串内，处理控制字符（0x00-0x1F）
+              if (inString && code < 32) {
+                // 转义控制字符
+                switch (code) {
+                  case 8:  fixed += '\\b'; break  // backspace
+                  case 9:  fixed += '\\t'; break  // tab
+                  case 10: fixed += '\\n'; break  // newline
+                  case 12: fixed += '\\f'; break  // form feed
+                  case 13: fixed += '\\r'; break  // carriage return
+                  default:
+                    // 其他控制字符用 unicode 转义
+                    fixed += '\\u' + code.toString(16).padStart(4, '0')
+                }
                 continue
               }
 
               fixed += char
             }
+
+            // 如果还在字符串内，说明缺少闭合引号
+            if (inString) {
+              fixed += '"'
+            }
+
             return fixed
+          }
+
+          // 辅助函数：尝试修复并解析 JSON
+          const tryParseJson = (text: string): object | null => {
+            // 第一步：清理 markdown 代码块标记
+            let cleaned = text.trim()
+            cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/i, '')
+            cleaned = cleaned.replace(/^```\s*/i, '').replace(/\s*```$/i, '')
+
+            // 第二步：修复字符串中的控制字符
+            const fixed = fixJsonString(cleaned)
+
+            // 第三步：修复未闭合的括号
+            let balanced = fixed
+            const openBraces = (balanced.match(/{/g) || []).length
+            const closeBraces = (balanced.match(/}/g) || []).length
+            const openBrackets = (balanced.match(/\[/g) || []).length
+            const closeBrackets = (balanced.match(/]/g) || []).length
+
+            // 添加缺失的闭合括号（按正确顺序）
+            const missingBrackets = openBrackets - closeBrackets
+            const missingBraces = openBraces - closeBraces
+
+            if (missingBrackets > 0 || missingBraces > 0) {
+              // 分析结尾来决定添加顺序
+              const trimmed = balanced.trimEnd()
+              const lastChar = trimmed[trimmed.length - 1]
+
+              // 移除末尾可能的不完整内容
+              if (lastChar !== '}' && lastChar !== ']' && lastChar !== '"' &&
+                  lastChar !== 'e' && lastChar !== 'l' && // true, false, null
+                  !/[0-9]/.test(lastChar)) {
+                // 尝试找到最后一个完整的值
+                const lastCompleteIdx = Math.max(
+                  trimmed.lastIndexOf('}'),
+                  trimmed.lastIndexOf(']'),
+                  trimmed.lastIndexOf('"'),
+                )
+                if (lastCompleteIdx > 0) {
+                  balanced = trimmed.substring(0, lastCompleteIdx + 1)
+                }
+              }
+
+              // 移除末尾的逗号
+              balanced = balanced.replace(/,\s*$/, '')
+
+              // 重新计算缺失的括号
+              const newOpenBrackets = (balanced.match(/\[/g) || []).length
+              const newCloseBrackets = (balanced.match(/]/g) || []).length
+              const newOpenBraces = (balanced.match(/{/g) || []).length
+              const newCloseBraces = (balanced.match(/}/g) || []).length
+
+              // 添加缺失的闭合括号
+              for (let i = 0; i < newOpenBrackets - newCloseBrackets; i++) {
+                balanced += ']'
+              }
+              for (let i = 0; i < newOpenBraces - newCloseBraces; i++) {
+                balanced += '}'
+              }
+            }
+
+            // 第四步：移除对象/数组中末尾的逗号
+            balanced = balanced.replace(/,(\s*[}\]])/g, '$1')
+
+            return JSON.parse(balanced)
           }
 
           try {
@@ -175,40 +258,9 @@ export async function POST(request: Request) {
           } catch (e) {
             parseError = e instanceof Error ? e.message : 'JSON 解析失败'
 
-            // 尝试修复常见的 JSON 问题
+            // 尝试使用修复函数
             try {
-              let fixedText = fullText
-
-              // 移除可能的 markdown 代码块标记
-              fixedText = fixedText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '')
-
-              // 修复字符串内的换行符
-              fixedText = fixJsonNewlines(fixedText)
-
-              // 修复未闭合的字符串（在结尾添加引号）
-              const quoteCount = (fixedText.match(/"/g) || []).length
-              if (quoteCount % 2 !== 0) {
-                fixedText = fixedText + '"'
-              }
-
-              // 修复未闭合的对象/数组
-              const openBraces = (fixedText.match(/{/g) || []).length
-              const closeBraces = (fixedText.match(/}/g) || []).length
-              const openBrackets = (fixedText.match(/\[/g) || []).length
-              const closeBrackets = (fixedText.match(/]/g) || []).length
-
-              // 添加缺失的闭合括号
-              for (let i = 0; i < openBrackets - closeBrackets; i++) {
-                fixedText = fixedText + ']'
-              }
-              for (let i = 0; i < openBraces - closeBraces; i++) {
-                fixedText = fixedText + '}'
-              }
-
-              // 移除末尾的逗号（在 } 或 ] 之前）
-              fixedText = fixedText.replace(/,(\s*[}\]])/g, '$1')
-
-              result = JSON.parse(fixedText)
+              result = tryParseJson(fullText)
               console.log('JSON 修复成功')
             } catch (e2) {
               console.error('JSON 修复失败:', parseError, e2 instanceof Error ? e2.message : '')

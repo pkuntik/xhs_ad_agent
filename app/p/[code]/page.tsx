@@ -130,7 +130,7 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
         if (hasCover || allImages.length > 0) {
           // 生成封面占位图
           if (hasCover) {
-            images.push(`${window.location.origin}/api/image/placeholder?title=${encodeURIComponent(work.draftContent!.cover!.copywriting || '封面')}&color=0`)
+            images.push(`${window.location.origin}/api/image/placeholder?title=${encodeURIComponent(work.draftContent!.cover!.overlay || '封面')}&color=0`)
           }
           // 为每张规划图生成占位图
           allImages.forEach((img, i) => {
@@ -310,7 +310,7 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
                             封面
                           </div>
                           <Image
-                            src={cover?.imageUrl || `/api/image/placeholder?title=${encodeURIComponent(cover?.copywriting || '封面')}&color=0`}
+                            src={cover?.imageUrl || `/api/image/placeholder?title=${encodeURIComponent(cover?.overlay || '封面')}&color=0`}
                             alt="封面"
                             fill
                             className="object-cover"
@@ -357,7 +357,7 @@ export default function PublishPage({ params }: { params: Promise<{ code: string
               {/* 封面规划提示 */}
               {work.draftContent?.cover && (
                 <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-                  <strong>封面：</strong>{work.draftContent.cover.copywriting}
+                  <strong>封面：</strong>{work.draftContent.cover.overlay}
                 </div>
               )}
             </CardContent>

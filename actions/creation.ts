@@ -276,11 +276,10 @@ export async function regeneratePlan(params: {
   success: boolean
   plan?: {
     type: string
-    mainVisual?: string
-    copywriting?: string
-    colorScheme?: string
     content?: string
     overlay?: string
+    colorScheme?: string
+    tips?: string
   }
   error?: string
 }> {
@@ -329,8 +328,8 @@ ${context.content?.body?.slice(0, 200) || ''}
 请以 JSON 格式返回封面规划，包含以下字段：
 {
   "type": "封面类型（如：产品展示、人物出镜、场景图、对比图等）",
-  "mainVisual": "主视觉描述（详细描述封面的主要视觉元素）",
-  "copywriting": "封面文案（吸引人的标题文字）",
+  "content": "主视觉描述（详细描述封面的主要视觉元素）",
+  "overlay": "封面文案（吸引人的标题文字）",
   "colorScheme": "配色方案（如：粉白系、蓝绿系、暖色调等）"
 }
 

@@ -39,7 +39,7 @@ interface ImageGenerationContext {
     type: string
     content: string
     overlay?: string
-    tips: string
+    tips?: string
   }
   visualStyle?: string
 }
@@ -214,7 +214,7 @@ export function ImageGenerator({
           keywords: context?.positioning?.keywords,
           targetAudience: context?.positioning?.targetAudience,
           tone: context?.positioning?.tone,
-          coverCopywriting: context?.cover?.copywriting,
+          coverOverlay: context?.cover?.overlay,
           colorScheme: context?.cover?.colorScheme,
           overlay: context?.currentImage?.overlay,
           imageContent: context?.currentImage?.content,
@@ -310,7 +310,7 @@ export function ImageGenerator({
           keywords: context?.positioning?.keywords,
           targetAudience: context?.positioning?.targetAudience,
           tone: context?.positioning?.tone,
-          coverCopywriting: context?.cover?.copywriting,
+          coverOverlay: context?.cover?.overlay,
           colorScheme: context?.cover?.colorScheme,
           overlay: context?.currentImage?.overlay,
           imageContent: context?.currentImage?.content,

@@ -40,6 +40,9 @@ import type {
   AudienceType,
 } from '@/types/creation'
 
+// 本地存储 key
+const FORM_STORAGE_KEY = 'creation_form_data'
+
 const PROMOTION_GOALS: PromotionGoal[] = [
   '笔记阅读量',
   '点赞收藏量',
@@ -65,28 +68,48 @@ const CONTENT_LENGTHS: { value: ContentLength; label: string; desc: string }[] =
   { value: '长', label: '长 (300字以上)', desc: '深度详尽，适合干货教程' },
 ]
 
+// 默认表单数据
+const DEFAULT_FORM_DATA: CreationFormData = {
+  promotionGoal: '私信咨询量',
+  topic: '',
+  contentScene: '引流咨询',
+  contentLength: '中',
+  audienceType: '智能推荐',
+  customAudience: {
+    gender: '不限',
+    ageRanges: [],
+  },
+  generationOptions: {
+    cover: true,
+    title: true,
+    content: true,
+    images: true,
+    comments: true,
+    topics: true,
+    privateMessage: false,
+  },
+}
+
+// 从 localStorage 加载表单数据
+function loadFormData(): CreationFormData {
+  if (typeof window === 'undefined') return DEFAULT_FORM_DATA
+  try {
+    const saved = localStorage.getItem(FORM_STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      // 合并默认值，确保新增字段有默认值
+      return { ...DEFAULT_FORM_DATA, ...parsed }
+    }
+  } catch (e) {
+    console.error('加载表单数据失败:', e)
+  }
+  return DEFAULT_FORM_DATA
+}
+
 export default function CreationPage() {
   const router = useRouter()
-  const [formData, setFormData] = useState<CreationFormData>({
-    promotionGoal: '私信咨询量',
-    topic: '',
-    contentScene: '引流咨询',
-    contentLength: '中',
-    audienceType: '智能推荐',
-    customAudience: {
-      gender: '不限',
-      ageRanges: [],
-    },
-    generationOptions: {
-      cover: true,
-      title: true,
-      content: true,
-      images: true,
-      comments: true,
-      topics: true,
-      privateMessage: false,
-    },
-  })
+  const [formData, setFormData] = useState<CreationFormData>(DEFAULT_FORM_DATA)
+  const [isFormLoaded, setIsFormLoaded] = useState(false)
 
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<GenerationResult | null>(null)
@@ -110,6 +133,24 @@ export default function CreationPage() {
   const [historyList, setHistoryList] = useState<CreationHistory[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
+
+  // 页面加载时从 localStorage 恢复表单数据
+  useEffect(() => {
+    const savedData = loadFormData()
+    setFormData(savedData)
+    setIsFormLoaded(true)
+  }, [])
+
+  // 表单数据变化时保存到 localStorage
+  useEffect(() => {
+    // 只有在初始加载完成后才保存，避免覆盖存储的数据
+    if (!isFormLoaded) return
+    try {
+      localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(formData))
+    } catch (e) {
+      console.error('保存表单数据失败:', e)
+    }
+  }, [formData, isFormLoaded])
 
   // 加载历史记录
   async function loadHistory() {
@@ -661,7 +702,7 @@ export default function CreationPage() {
                       {/* 左侧：图片生成 */}
                       <div className="w-40 flex-shrink-0">
                         <ImageGenerator
-                          prompt={result.cover.mainVisual}
+                          prompt={result.cover.content}
                           imageType="cover"
                           context={{
                             formData,
@@ -683,8 +724,8 @@ export default function CreationPage() {
                       {/* 右侧：规划信息 */}
                       <div className="flex-1 space-y-2 text-sm">
                         <p><strong>类型：</strong>{result.cover.type}</p>
-                        <p><strong>主视觉：</strong>{result.cover.mainVisual}</p>
-                        <p><strong>文案：</strong>{result.cover.copywriting}</p>
+                        <p><strong>主视觉：</strong>{result.cover.content}</p>
+                        <p><strong>文案：</strong>{result.cover.overlay}</p>
                         <p><strong>配色：</strong>{result.cover.colorScheme}</p>
                       </div>
                     </div>

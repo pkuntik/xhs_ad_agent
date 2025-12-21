@@ -54,16 +54,18 @@ export interface CreationFormData {
 
 export type ImageFeedback = 'like' | 'dislike' | null;
 
+// 统一的图片规划结构（封面和配图共用）
 export interface ImagePlan {
-  index: number;
-  type: string;
-  content: string;
-  overlay: string;
-  tips: string;
+  index: number;           // 图片序号（封面为1，配图从2开始）
+  type: string;            // 图片类型
+  content: string;         // 内容描述
+  overlay?: string;        // 文字叠加（可选）
+  colorScheme?: string;    // 配色方案（可选）
+  tips?: string;           // 设计建议（可选）
   imageUrl?: string;
   imagePrompt?: string;
   feedback?: ImageFeedback;
-  chuangkitDesignId?: string;  // 创客贴设计稿 ID，用于保留图层信息
+  chuangkitDesignId?: string;  // 创客贴设计稿 ID
 }
 
 export interface GenerationResult {
@@ -73,18 +75,7 @@ export interface GenerationResult {
     tone: string;
     keywords: string[];
   };
-  cover?: {
-    type: string;
-    mainVisual: string;
-    copywriting: string;
-    textPosition: string;
-    colorScheme: string;
-    designTips: string;
-    imageUrl?: string;
-    imagePrompt?: string;
-    feedback?: ImageFeedback;
-    chuangkitDesignId?: string;  // 创客贴设计稿 ID，用于保留图层信息
-  };
+  cover?: ImagePlan;       // 封面（index 固定为 1）
   title?: {
     text: string;
     highlight: string;
@@ -93,7 +84,7 @@ export interface GenerationResult {
     body: string;
     structure: string;
   };
-  images?: ImagePlan[];
+  images?: ImagePlan[];    // 配图（index 从 2 开始）
   comments?: {
     pinnedComment: string;
     qaList: Array<{
