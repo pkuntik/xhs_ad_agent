@@ -20,6 +20,16 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 获取历史评论
+        id: get_comments
+        run: |
+          COMMENTS=$(gh issue view ${{ github.event.issue.number }} --json comments --jq '.comments | map("**@" + .author.login + "** (" + .createdAt + "):\n" + .body) | join("\n\n---\n\n")')
+          echo "comments<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMENTS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Claude 回复 Issue 评论
         uses: anthropics/claude-code-action@v1
         env:
@@ -36,16 +46,20 @@ jobs:
             **Issue 描述**:
             ${{ github.event.issue.body }}
 
+            **历史评论**:
+            ${{ steps.get_comments.outputs.comments }}
+
             **最新评论来自** @${{ github.event.comment.user.login }}:
             ${{ github.event.comment.body }}
 
             请根据评论内容：
-            1. 如果用户在询问问题，提供详细的解答（参考 issue 描述中的上下文）
+            1. 如果用户在询问问题，提供详细的解答（参考 issue 描述和历史讨论）
             2. 如果用户在讨论解决方案，提供专业建议
             3. 如果用户请求修复，说明你需要维护者添加 `auto-fix-approved` 和 `ai-safe` 标签才能开始自动修复
             4. 如果用户提供了额外信息，确认收到并更新你的理解
+            5. 注意上下文，理解完整的讨论历史
 
-            你已经有完整的 issue 信息，不需要使用 gh 命令查询。
+            你已经有完整的 issue 信息和所有评论历史，不需要使用 gh 命令查询。
 
             请在 issue 评论中回复用户。
 
