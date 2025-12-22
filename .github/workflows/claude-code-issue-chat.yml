@@ -1,0 +1,44 @@
+name: Claude Code - Issue 对话
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  chat:
+    runs-on: ubuntu-latest
+    # 只在 issue 评论时触发，不在 PR 评论时触发
+    if: github.event.issue.pull_request == null
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: Claude 回复 Issue 评论
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          prompt: |
+            你是这个仓库的 AI 助手，正在帮助用户解决 issue #${{ github.event.issue.number }}。
+
+            **Issue 标题**: ${{ github.event.issue.title }}
+
+            **最新评论来自** @${{ github.event.comment.user.login }}:
+            ${{ github.event.comment.body }}
+
+            请根据评论内容：
+            1. 如果用户在询问问题，提供详细的解答
+            2. 如果用户在讨论解决方案，提供专业建议
+            3. 如果用户请求修复，说明你需要维护者添加 `auto-fix-approved` 和 `ai-safe` 标签才能开始自动修复
+            4. 如果用户提供了额外信息，确认收到并更新你的理解
+
+            请在 issue 评论中回复用户。
+
+          claude_args: "--max-turns 5"
