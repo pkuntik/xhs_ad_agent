@@ -14,10 +14,13 @@ jobs:
   chat:
     runs-on: ubuntu-latest
     # 只在 issue 评论时触发，不在 PR 评论时触发，且评论者不是 bot
+    # 排除明确的确认指令（由 confirm-fix 工作流处理）
     if: |
       github.event.issue.pull_request == null &&
       github.event.comment.user.type != 'Bot' &&
-      github.event.sender.login != 'github-actions[bot]'
+      github.event.sender.login != 'github-actions[bot]' &&
+      !contains(github.event.comment.body, '/confirm-fix') &&
+      !contains(github.event.comment.body, '/approve')
 
     steps:
       - name: 检出代码
@@ -58,9 +61,22 @@ jobs:
             请根据评论内容：
             1. 如果用户在询问问题，提供详细的解答（参考 issue 描述和历史讨论）
             2. 如果用户在讨论解决方案，提供专业建议
-            3. 如果用户请求修复，说明你需要维护者添加 `auto-fix-approved` 和 `ai-safe` 标签才能开始自动修复
-            4. 如果用户提供了额外信息，确认收到并更新你的理解
-            5. 注意上下文，理解完整的讨论历史
+            3. 如果用户提供了额外信息，确认收到并更新你的理解
+            4. 注意上下文，理解完整的讨论历史
+
+            **处理修复请求**:
+            如果用户明确表示要修复（如"修"、"同意修复"、"开始修复"等），你需要：
+            1. 检查 issue 是否有 `auto-fix-approved` 和 `ai-safe` 标签
+            2. 如果有这两个标签：
+               - 使用 `gh issue edit ${{ github.event.issue.number }} --add-label "fix-confirmed"` 添加确认标签
+               - 回复："✅ 已确认修复方案！自动修复工作流即将启动。"
+            3. 如果没有这两个标签：
+               - 回复："收到修复请求。需要维护者添加 `auto-fix-approved` 和 `ai-safe` 标签后才能开始自动修复。"
+
+            **不要自己尝试修复代码**！你的职责是：
+            - 回答问题和提供建议
+            - 引导用户使用自动修复工作流
+            - 检查标签并触发修复（通过添加 fix-confirmed 标签）
 
             **回复方式**:
             使用 `gh issue comment ${{ github.event.issue.number }} --body "你的回复内容"` 来发布评论
@@ -69,4 +85,4 @@ jobs:
             - Read/Grep/Glob 查看代码
             - Bash 执行命令（包括 gh 命令管理 issues、PR、标签等）
 
-          claude_args: "--max-turns 10 --allowed-tools Read,Grep,Glob,Bash"
+          claude_args: "--max-turns 15 --allowed-tools Read,Grep,Glob,Bash"

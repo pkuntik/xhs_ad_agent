@@ -25,16 +25,10 @@ jobs:
             const comment = context.payload.comment.body.toLowerCase().trim();
             const issueNumber = context.payload.issue.number;
 
-            // 检测确认指令
+            // 检测确认指令（只保留明确的指令）
             const confirmKeywords = [
               '/confirm-fix',
-              '/approve',
-              '/同意修复',
-              '/确认修复',
-              '同意修复',
-              '确认修复',
-              '同意此修复方案',
-              '同意，可以开始修复'
+              '/approve'
             ];
 
             const isConfirmation = confirmKeywords.some(keyword =>
