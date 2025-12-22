@@ -38,7 +38,7 @@ jobs:
                建议标签: bug, priority-high, ui-consistency
                ```
 
-            请在 issue 评论中回复你的分析。
+            生成你的分析报告。
 
             注意：你只能**建议**标签，不能直接添加标签。
 

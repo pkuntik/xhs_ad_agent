@@ -45,7 +45,7 @@ jobs:
             3. 组件一致性
             4. 无效代码清理
 
-            生成审查报告并发布到 PR 评论中。
+            生成详细的审查报告。
 
           # Claude Code CLI 参数
           claude_args: "--max-turns 5"

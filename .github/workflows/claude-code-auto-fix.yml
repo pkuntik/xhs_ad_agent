@@ -30,6 +30,7 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
           prompt: |
             你是自动修复机器人。
@@ -41,7 +42,7 @@ jobs:
             请：
             1. 使用 gh issue view ${{ github.event.issue.number }} 读取 issue 详情
             2. 分析问题并制定修复方案
-            3. 在 issue 评论区发布详细的修复方案
+            3. 使用 gh issue comment ${{ github.event.issue.number }} --body "..." 发布详细的修复方案
 
             修复方案应包括：
             - 问题分析
@@ -60,7 +61,7 @@ jobs:
 
             ⚠️ **重要**：此阶段只提出方案，不要实际修复代码。
 
-          claude_args: "--max-turns 5"
+          claude_args: "--max-turns 5 --allowed-tools Read,Grep,Glob,Bash"
 
   # 第二阶段：执行修复
   execute-fix:
@@ -91,6 +92,7 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
           prompt: |
             你是自动修复机器人。
@@ -113,7 +115,7 @@ jobs:
             2. 查看之前在评论中发布的修复方案
             3. 按照方案进行修复
             4. 修复后运行 `pnpm tsc --noEmit` 验证
-            5. 如果修复成功，提交代码
+            5. 使用 git add 和 git commit 提交代码（不要 push，由后续步骤处理）
 
             提交信息格式：
             ```
@@ -124,7 +126,7 @@ jobs:
             🤖 由 Claude Code 自动修复
             ```
 
-          claude_args: "--max-turns 10"
+          claude_args: "--max-turns 10 --allowed-tools Read,Grep,Glob,Bash,Edit,Write"
 
       - name: 推送分支
         run: |
