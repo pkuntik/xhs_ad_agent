@@ -26,6 +26,7 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
           prompt: |
             你是这个仓库的 AI 助手，正在帮助用户解决 issue #${{ github.event.issue.number }}。
