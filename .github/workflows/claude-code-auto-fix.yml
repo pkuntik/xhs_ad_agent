@@ -135,15 +135,3 @@ jobs:
               body: `🤖 我已创建修复 PR（草稿）: #${pr.number}\n\n请 review 后再合并。`,
             });
 
-# ⚠️ 重要安全注意事项：
-#
-# 1. 这个工作流需要两个标签才会触发（'auto-fix-approved' + 'ai-safe'）
-#    - 维护者必须手动审核 issue 后才添加这些标签
-#
-# 2. 创建的 PR 默认是 draft 状态，必须人工 review
-#
-# 3. 不要在这个工作流里暴露敏感 secrets
-#
-# 4. 建议配合 CODEOWNERS 和 branch protection rules 使用
-#
-# 5. 考虑添加额外的检查（如代码 diff 大小限制）
