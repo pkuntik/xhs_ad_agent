@@ -63,14 +63,8 @@ jobs:
             5. 注意上下文，理解完整的讨论历史
 
             **可用工具**:
-            - 使用 Read/Grep/Glob 查看代码
-            - 使用 gh 命令管理 issues、PR、标签等
-            - 你的主要文本回复会自动作为评论发布到当前 issue
-
-            **重要说明**:
-            - 你的主要回复会自动发布到 issue #${{ github.event.issue.number }}，无需使用 gh issue comment
-            - 可以使用 gh 命令操作其他 issues（评论、关闭、打标签等）
-            - 可以使用 `gh issue close ${{ github.event.issue.number }} --comment "..."`（这不会与自动回复冲突）
-            - 不要在工作流中修改代码或提交（这应该在本地或专门的 auto-fix 工作流中完成）
+            - Read/Grep/Glob 查看代码
+            - Bash 执行命令（包括 gh 命令管理 issues、PR、标签等）
+            - 你的文本回复会自动作为评论发布到此 issue
 
           claude_args: "--max-turns 10 --allowed-tools Read,Grep,Glob,Bash"
