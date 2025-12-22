@@ -13,7 +13,7 @@ allowed-tools: Read, Grep, Glob, Bash, WebSearch
 
 ### 1. Next.js 和 Server Actions 最佳实践
 检查是否充分利用 Next.js 15 和 Server Actions 特性：
-- ✅ Server Actions 替代传统 API 路由
+- ✅ Server Actions 替代传统 API 路由（**仅限非流式场景**）
 - ✅ 使用 `'use server'` 指令
 - ✅ 避免在 Server Actions 中使用客户端 API
 - ✅ 合理使用 `revalidatePath` 和 `revalidateTag`
@@ -23,6 +23,11 @@ allowed-tools: Read, Grep, Glob, Bash, WebSearch
 - ✅ 使用 Server Actions 进行表单提交
 - ❌ 避免：API 路由做简单 CRUD（应用 Server Actions）
 - ❌ 避免：在服务端组件中使用 useState、useEffect
+- ⚠️ **保留 Route Handler 的场景**：
+  - 流式响应（SSE/ReadableStream）如 AI 生成
+  - 大文件上传/下载
+  - Webhooks 回调
+  - 需要自定义 Response Headers 的场景
 
 ### 2. 代码重复和复用性
 识别需要抽离复用的代码：
@@ -77,6 +82,53 @@ allowed-tools: Read, Grep, Glob, Bash, WebSearch
 - 用户输入是否验证
 - API 调用是否有错误处理
 
+### 8. 前端组件一致性
+确保 UI 和交互模式统一：
+- **UI 组件使用一致性**：
+  - 按钮：是否统一使用 shadcn/ui `<Button>`
+  - 表单：是否统一使用 react-hook-form + Zod
+  - 对话框：是否统一使用 `<Dialog>` 或 `<AlertDialog>`
+  - 输入框：是否统一使用 `<Input>` / `<Textarea>`
+- **样式模式一致性**：
+  - Tailwind 类名使用模式（如间距、颜色）
+  - 响应式断点使用一致（sm/md/lg/xl）
+  - 布局模式（flex/grid）使用规范
+- **状态管理一致性**：
+  - 全局状态：是否统一使用 zustand
+  - 表单状态：是否统一使用 react-hook-form
+  - 服务端状态：避免重复的 useState + useEffect 获取数据
+- **用户反馈一致性**：
+  - 成功/错误提示：是否统一使用 sonner toast
+  - 加载状态：Loading spinner 或 skeleton 是否一致
+  - 错误处理：错误边界和错误展示是否统一
+- **交互模式一致性**：
+  - 删除操作：是否都有确认对话框
+  - 表单提交：是否都显示 loading 状态
+  - 数据刷新：是否使用一致的刷新机制
+
+### 9. 无效逻辑和业务代码质量
+清理冗余代码，优化业务逻辑：
+- **无效代码检测**：
+  - 永远不会执行的代码（unreachable code）
+  - 未使用的函数、变量、类型定义
+  - 未使用的导入（import）
+  - 注释掉的大段代码块（超过 10 行）
+  - 遗留的 console.log / debugger 语句
+  - TODO/FIXME 注释从未处理
+- **无效逻辑检测**：
+  - 永远为 true/false 的条件判断
+  - 重复的 if 条件
+  - 空的 try-catch 块
+  - 空的函数或组件
+  - 无用的三元表达式（`condition ? true : false`）
+- **业务代码质量**：
+  - 业务逻辑是否误放在前端组件（应该在 Server Actions）
+  - 硬编码的业务规则（应该用配置或常量）
+  - 业务流程是否清晰（复杂流程缺少状态机或流程图）
+  - 关键业务逻辑是否有注释说明
+  - 业务验证逻辑是否使用 Zod schemas
+  - 是否有过时的业务逻辑（功能已废弃但代码未删除）
+
 ## 使用方式
 
 ### 方式 1: 审查单个文件
@@ -120,9 +172,10 @@ allowed-tools: Read, Grep, Glob, Bash, WebSearch
 1. **读取文件内容** (使用 Read 工具)
 
 2. **Next.js 最佳实践检查**:
-   - 是否有 API 路由应该改用 Server Actions
+   - 是否有 API 路由应该改用 Server Actions（排除流式、文件处理、Webhooks）
    - Server Components 是否误用了客户端 hooks
    - 是否正确使用 `revalidatePath`
+   - Route Handler 的使用是否合理（流式响应必须用 Route Handler）
 
 3. **代码重复检查**:
    - 在项目中搜索相似的代码片段
@@ -145,6 +198,21 @@ allowed-tools: Read, Grep, Glob, Bash, WebSearch
    - 查找 `any` 类型
    - 检查错误处理
 
+8. **前端组件一致性检查**（针对 .tsx 组件文件）:
+   - UI 组件是否统一使用 shadcn/ui（Button、Input、Dialog 等）
+   - 表单是否统一使用 react-hook-form
+   - Toast 通知是否统一使用 sonner
+   - 状态管理模式是否一致
+   - 加载和错误状态展示是否统一
+
+9. **无效逻辑检测**:
+   - 查找未使用的导入（import）
+   - 检测注释掉的代码块
+   - 查找 console.log / debugger
+   - 检查 TODO/FIXME 标记
+   - 业务逻辑是否误放在组件中（应该在 Server Actions）
+   - 硬编码的业务规则
+
 ### 步骤 4: 依赖检查
 - 使用 Bash 运行 `pnpm outdated` 查找过时依赖
 - 使用 WebSearch 查询关键依赖的最新最佳实践
@@ -163,6 +231,8 @@ allowed-tools: Read, Grep, Glob, Bash, WebSearch
 - 文档完整性: ⭐⭐ (4/10)
 - 依赖更新度: ⭐⭐⭐⭐ (8/10)
 - 性能优化: ⭐⭐⭐ (6/10)
+- 组件一致性: ⭐⭐⭐ (6/10)
+- 代码整洁度: ⭐⭐⭐⭐ (7/10)
 
 ## 🔴 严重问题 (需要立即修复)
 
@@ -182,15 +252,37 @@ export function validateDeliveryStatus(status: DeliveryStatus) {
 **影响**: 增加客户端 bundle 大小，降低性能
 **建议**: 移除 'use client'，将交互逻辑抽离到子组件
 
+### 3. components/accounts/AccountForm.tsx:45-120
+**问题**: 业务逻辑直接写在组件中，未使用 Server Actions
+**影响**: 难以复用，测试困难，违反项目规范
+**建议**: 将业务逻辑抽离到 actions/account.ts
+```typescript
+// 应该创建
+'use server'
+export async function updateAccountSettings(data: AccountSettings) {
+  // 业务逻辑
+}
+```
+
 ## 🟡 中等问题 (建议优化)
 
 ### 1. actions/account.ts:230-280
 **问题**: 函数过长 (50+ 行)，职责不单一
 **建议**: 拆分为多个小函数
 
-### 2. lib/xhs/api.ts:45
-**问题**: 使用传统 fetch 而非 Server Actions
-**建议**: 在 Next.js 15 中，优先考虑 Server Actions
+### 2. 组件一致性问题
+**问题**: 发现 3 处使用了不一致的 UI 组件
+- `components/works/DeleteButton.tsx:12` - 自定义按钮而非 shadcn/ui Button
+- `app/(dashboard)/leads/page.tsx:89` - 使用原生 `<button>` 而非 `<Button>`
+- `components/image/UploadDialog.tsx:34` - 自定义 Dialog 样式
+**建议**: 统一使用 shadcn/ui 组件保持一致性
+
+### 3. 无效代码清理
+**问题**: 发现多处无效代码
+- `lib/utils/deprecated.ts:全文` - 整个文件已废弃但未删除
+- `actions/creation.ts:245-267` - 注释掉的代码块 (23 行)
+- `components/layout/Header.tsx:12,34,56` - 3 处 console.log 调试语句
+**建议**: 立即删除无效代码，保持代码库整洁
 
 ## 🟢 低优先级建议
 
