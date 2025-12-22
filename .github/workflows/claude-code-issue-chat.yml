@@ -8,6 +8,7 @@ permissions:
   issues: write
   contents: read
 
+
 jobs:
   chat:
     runs-on: ubuntu-latest
