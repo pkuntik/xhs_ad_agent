@@ -10,35 +10,23 @@ permissions:
   issues: write
 
 jobs:
-  auto-fix:
-    # 🔒 安全设计：必须同时满足两个条件
-    # 1. 有 'auto-fix-approved' 标签（由维护者手动添加）
-    # 2. 有 'ai-safe' 标签（表示这是简单、安全的修复）
+  # 第一阶段：评论修复方案
+  propose-fix:
+    # 🔒 条件：有 'auto-fix-approved' 和 'ai-safe'，但没有 'fix-confirmed'
     if: |
       contains(github.event.issue.labels.*.name, 'auto-fix-approved') &&
-      contains(github.event.issue.labels.*.name, 'ai-safe')
+      contains(github.event.issue.labels.*.name, 'ai-safe') &&
+      !contains(github.event.issue.labels.*.name, 'fix-confirmed')
 
     runs-on: ubuntu-latest
 
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-        with:
-          # 使用 GitHub App token 而非 GITHUB_TOKEN
-          # 这样创建的 PR 可以触发其他 CI workflow
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 创建修复分支
-        run: |
-          ISSUE_NUM=${{ github.event.issue.number }}
-          BRANCH_NAME="auto-fix/issue-${ISSUE_NUM}"
-          git checkout -b "$BRANCH_NAME"
-          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
-
-      - name: Claude 自动修复
+      - name: Claude 分析并提出修复方案
         uses: anthropics/claude-code-action@v1
         env:
-          # 支持自定义 Anthropic API Base URL
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -48,6 +36,71 @@ jobs:
 
             当前 issue: #${{ github.event.issue.number }}
 
+            **任务：分析问题并提出修复方案**
+
+            请：
+            1. 使用 gh issue view ${{ github.event.issue.number }} 读取 issue 详情
+            2. 分析问题并制定修复方案
+            3. 在 issue 评论区发布详细的修复方案
+
+            修复方案应包括：
+            - 问题分析
+            - 具体修复步骤
+            - 影响范围
+            - 预期效果
+            - 风险评估
+
+            在方案末尾说明：
+            ```
+            **是否同意此修复方案？**
+
+            如果同意，请添加标签 `fix-confirmed`，我将自动开始修复。
+            如果不同意，请移除 `auto-fix-approved` 标签并说明调整要求。
+            ```
+
+            ⚠️ **重要**：此阶段只提出方案，不要实际修复代码。
+
+          claude_args: "--max-turns 5"
+
+  # 第二阶段：执行修复
+  execute-fix:
+    # 🔒 条件：有全部三个标签（auto-fix-approved + ai-safe + fix-confirmed）
+    if: |
+      contains(github.event.issue.labels.*.name, 'auto-fix-approved') &&
+      contains(github.event.issue.labels.*.name, 'ai-safe') &&
+      contains(github.event.issue.labels.*.name, 'fix-confirmed')
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 创建修复分支
+        run: |
+          ISSUE_NUM=${{ github.event.issue.number }}
+          BRANCH_NAME="auto-fix/issue-${ISSUE_NUM}"
+          git checkout -b "$BRANCH_NAME"
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+      - name: Claude 执行修复
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          prompt: |
+            你是自动修复机器人。
+
+            当前 issue: #${{ github.event.issue.number }}
+
+            **任务：执行已确认的修复方案**
+
+            用户已经确认了修复方案（有 fix-confirmed 标签），现在请执行修复。
+
             ⚠️ **重要安全限制**：
             - 只能修复 import 排序、代码格式化等**简单、低风险**的问题
             - 不得修改业务逻辑
@@ -56,10 +109,11 @@ jobs:
             - 不得删除 console.log（可能是有意保留的）
 
             请：
-            1. 使用 /issue-manager 读取 issue 详情
-            2. 根据 issue 描述进行修复
-            3. 修复后运行 `pnpm tsc --noEmit` 验证
-            4. 如果修复成功，提交代码
+            1. 使用 gh issue view ${{ github.event.issue.number }} 读取 issue 详情和评论
+            2. 查看之前在评论中发布的修复方案
+            3. 按照方案进行修复
+            4. 修复后运行 `pnpm tsc --noEmit` 验证
+            5. 如果修复成功，提交代码
 
             提交信息格式：
             ```

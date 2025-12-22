@@ -74,7 +74,40 @@ allowed-tools: Read, Write, Bash, Grep, Glob, Edit
 - 查找最近的审查报告（或用户指定的报告）
 - 解析问题列表
 
-#### 步骤 3: 为每个问题创建 Issue
+#### 步骤 3: 检查重复议题
+**重要：创建前必须先查重，避免重复创建**
+
+使用 `gh issue list` 搜索已有的相似议题：
+
+```bash
+# 搜索标题中包含关键词的议题
+gh issue list --search "投放状态" --state all --json number,title,state
+
+# 搜索特定标签的议题
+gh issue list --label "tech-debt,code-quality" --json number,title,body
+```
+
+对于每个待创建的问题：
+1. 提取关键词（如"投放状态"、"重复代码"、"组件一致性"）
+2. 搜索已有 issues 的标题和内容
+3. 如果找到相似的议题，询问用户：
+   - 是否要在已有 issue 中补充信息？
+   - 还是仍然创建新 issue？
+4. 如果是重复议题，跳过创建，在已有 issue 中添加评论补充信息
+
+示例输出：
+```markdown
+⚠️ 发现可能重复的议题：
+
+待创建: "大量重复的投放状态检查逻辑"
+已存在: #85 "投放状态验证逻辑需要统一" (open)
+
+是否要：
+1. 在 #85 中补充新发现的重复代码位置
+2. 仍然创建新 issue（如果确实是不同的问题）
+```
+
+#### 步骤 4: 为每个问题创建 Issue
 使用 `gh issue create` 创建结构化的 issue：
 
 ```bash
@@ -121,7 +154,7 @@ EOF
   --assignee "@me"
 ```
 
-#### 步骤 4: 生成总结报告
+#### 步骤 5: 生成总结报告
 创建完成后，输出 Markdown 报告：
 
 ```markdown
@@ -230,23 +263,90 @@ gh issue view 42 --json title,body,labels
 
 当用户请求修复 issue 时：
 
-#### 步骤 1: 确认修复范围
-使用 AskUserQuestion 确认：
-- 确认要修复这个 issue？
+#### 步骤 1: 分析问题并制定修复方案
+- 获取 issue 详情
+- 读取相关文件了解上下文
+- 制定详细的修复方案
+
+#### 步骤 2: 在 Issue 评论区说明修复方案并等待确认
+**重要：在实际修复前，必须先在 issue 评论区说明方案，等待用户确认**
+
+使用 `gh issue comment` 发布修复方案：
+
+```bash
+gh issue comment 42 --body "$(cat <<'EOF'
+## 🤖 AI 修复方案
+
+我已分析了这个问题，建议采用以下方案进行修复：
+
+### 📋 修复计划
+
+**问题**: 大量重复的投放状态检查逻辑
+
+**方案**: 抽离到统一的工具函数
+
+**具体步骤**:
+1. 创建 `lib/utils/delivery-status.ts`
+2. 实现统一的 `validateDeliveryStatus` 函数
+3. 重构以下文件使用新函数：
+   - `actions/delivery.ts` (3 处调用)
+   - `actions/campaign.ts` (2 处调用)
+   - `app/api/delivery/route.ts` (1 处调用)
+
+**预期效果**:
+- ✅ 删除约 45 行重复代码
+- ✅ 提高代码可维护性
+- ✅ 统一状态验证逻辑
+
+**影响范围**:
+- 修改 3 个文件
+- 不影响现有功能
+- 无破坏性变更
+
+**验证方式**:
+- 运行 `pnpm tsc --noEmit` 确保类型正确
+- 运行 `pnpm build` 确保构建成功
+- 测试投放相关功能
+
+### ⚠️ 风险评估
+- **风险等级**: 低
+- **建议**: 修复后需测试投放流程
+
+---
+
+**是否同意此修复方案？**
+
+如果同意，请回复：
+- ✅ 同意，可以开始修复
+- 或添加标签 `fix-approved` 我将自动开始修复
+
+如果需要调整，请说明具体要求。
+EOF
+)"
+```
+
+然后等待用户回复或确认：
+- 用户回复"同意"或类似内容
+- 或用户添加 `fix-approved` 标签
+- 或用户在对话中明确表示同意
+
+#### 步骤 3: 确认修复范围
+获得用户初步同意后，使用 AskUserQuestion 再次确认细节：
 - 是否需要创建新分支？
 - 是否需要添加测试？
+- 是否立即推送 PR？
 
-#### 步骤 2: 创建修复分支（如果需要）
+#### 步骤 4: 创建修复分支（如果需要）
 ```bash
 git checkout -b fix/issue-42-delivery-status-duplication
 ```
 
-#### 步骤 3: 实施修复
+#### 步骤 5: 实施修复
 - 根据讨论的方案进行代码修改
 - 使用 Edit/Write 工具修改文件
 - 添加必要的测试
 
-#### 步骤 4: 验证修复
+#### 步骤 6: 验证修复
 ```bash
 # 运行类型检查
 pnpm tsc --noEmit
@@ -258,7 +358,7 @@ pnpm test
 pnpm build
 ```
 
-#### 步骤 5: 提交和关联 Issue
+#### 步骤 7: 提交和关联 Issue
 ```bash
 git add .
 git commit -m "$(cat <<'EOF'
@@ -278,7 +378,7 @@ EOF
 )"
 ```
 
-#### 步骤 6: 报告修复结果
+#### 步骤 8: 报告修复结果
 ```markdown
 # ✅ Issue #42 修复完成
 
