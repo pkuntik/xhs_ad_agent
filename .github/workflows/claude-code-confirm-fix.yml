@@ -1,0 +1,99 @@
+name: Claude Code - 确认修复指令
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  detect-confirmation:
+    # 只在 issue 评论时触发，不在 PR 评论时触发
+    if: |
+      github.event.issue.pull_request == null &&
+      github.event.comment.user.type != 'Bot'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检测确认指令
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const comment = context.payload.comment.body.toLowerCase().trim();
+            const issueNumber = context.payload.issue.number;
+
+            // 检测确认指令
+            const confirmKeywords = [
+              '/confirm-fix',
+              '/approve',
+              '/同意修复',
+              '/确认修复',
+              '同意修复',
+              '确认修复',
+              '同意此修复方案',
+              '同意，可以开始修复'
+            ];
+
+            const isConfirmation = confirmKeywords.some(keyword =>
+              comment.includes(keyword.toLowerCase())
+            );
+
+            if (!isConfirmation) {
+              console.log('评论不包含确认指令，跳过处理');
+              return;
+            }
+
+            // 获取当前 issue 的标签
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+            });
+
+            const labels = issue.labels.map(label => label.name);
+
+            // 检查是否已有必需的标签
+            const hasAutoFixApproved = labels.includes('auto-fix-approved');
+            const hasAiSafe = labels.includes('ai-safe');
+            const hasFixConfirmed = labels.includes('fix-confirmed');
+
+            if (!hasAutoFixApproved || !hasAiSafe) {
+              // 没有必需的标签，提示用户
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: '⚠️ 此 issue 尚未获得自动修复批准。\n\n需要维护者添加以下标签才能启用自动修复：\n- `auto-fix-approved` - 批准自动修复\n- `ai-safe` - 确认这是简单安全的问题\n\n请联系维护者审批。',
+              });
+              return;
+            }
+
+            if (hasFixConfirmed) {
+              // 已经确认过了
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: '✅ 此修复方案已经确认，修复工作流应该正在运行或已完成。\n\n请查看 [Actions](../../actions) 页面了解修复进度。',
+              });
+              return;
+            }
+
+            // 添加 fix-confirmed 标签
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: ['fix-confirmed'],
+            });
+
+            // 发送确认消息
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: '✅ 已确认修复方案！\n\n🤖 自动修复工作流即将启动，我会：\n1. 创建修复分支 `auto-fix/issue-' + issueNumber + '`\n2. 按照方案进行修复\n3. 运行验证测试\n4. 创建草稿 PR\n\n请稍候，你可以在 [Actions](../../actions) 页面查看进度。',
+            });

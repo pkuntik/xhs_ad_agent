@@ -49,7 +49,7 @@
 
 **🔒 两阶段确认机制**
 
-这个工作流采用两阶段确认机制，确保 AI 修复的安全性和可控性。
+这个工作流采用两阶段确认机制，确保 AI 修复的安全性和可控性。用户通过评论中的指令来确认修复方案，无需手动添加标签。
 
 #### 阶段 1: 提出修复方案
 
@@ -92,8 +92,12 @@
 
 **是否同意此修复方案？**
 
-如果同意，请添加标签 `fix-confirmed`，我将自动开始修复。
-如果不同意，请移除 `auto-fix-approved` 标签并说明调整要求。
+如果同意，请在评论中回复以下任意内容：
+- `/confirm-fix`
+- `同意修复`
+- `确认修复`
+
+我将自动开始修复。如果不同意，请说明调整要求。
 ```
 
 #### 阶段 2: 执行修复
@@ -121,6 +125,43 @@
 
 ---
 
+### 4. Issue 对话 (`claude-code-issue-chat.yml`)
+
+**触发时机**:
+- Issue 中有新评论时
+
+**功能**:
+- AI 自动回复 issue 评论
+- 支持多轮对话
+- 包含完整历史上下文
+- 可以查看代码、执行命令
+
+**使用方式**:
+```bash
+# 直接在 issue 中评论，AI 会自动回复
+```
+
+---
+
+### 5. 确认修复指令 (`claude-code-confirm-fix.yml`)
+
+**触发时机**:
+- Issue 评论中包含确认指令时
+
+**功能**:
+- 检测用户确认修复的评论（如 `/confirm-fix`、`同意修复`）
+- 自动添加 `fix-confirmed` 标签
+- 触发自动修复工作流
+
+**支持的确认指令**:
+- `/confirm-fix`
+- `/approve`
+- `同意修复`
+- `确认修复`
+- `同意此修复方案`
+
+---
+
 ## 使用指南
 
 ### 如何使用自动修复
@@ -143,8 +184,8 @@
    - 评估方案是否合理
 
 4. **确认或拒绝方案**
-   - ✅ **确认**：添加 `fix-confirmed` 标签 → 触发阶段 2 自动修复
-   - ❌ **拒绝**：移除 `auto-fix-approved` 标签，在评论中说明调整要求
+   - ✅ **确认**：在评论中回复 `/confirm-fix`、`同意修复` 或 `确认修复` → 自动添加 `fix-confirmed` 标签并触发阶段 2
+   - ❌ **拒绝**：在评论中说明调整要求
 
 5. **Review 自动创建的 PR**
    - PR 默认为草稿状态
@@ -240,7 +281,9 @@ permissions:
 .github/workflows/
 ├── claude-code-pr-review.yml        # PR 审查
 ├── claude-code-issue-triage.yml     # Issue 分诊
-└── claude-code-auto-fix.yml         # 两阶段自动修复
+├── claude-code-auto-fix.yml         # 两阶段自动修复
+├── claude-code-issue-chat.yml       # Issue 对话
+└── claude-code-confirm-fix.yml      # 确认修复指令
 ```
 
 ## 相关文档

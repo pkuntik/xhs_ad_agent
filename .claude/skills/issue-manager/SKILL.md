@@ -316,11 +316,12 @@ gh issue comment 42 --body "$(cat <<'EOF'
 
 **是否同意此修复方案？**
 
-如果同意，请回复：
-- ✅ 同意，可以开始修复
-- 或添加标签 `fix-approved` 我将自动开始修复
+如果同意，请在评论中回复以下任意内容：
+- `/confirm-fix`
+- `同意修复`
+- `确认修复`
 
-如果需要调整，请说明具体要求。
+我将自动开始修复。如果需要调整，请说明具体要求。
 EOF
 )"
 ```
@@ -580,7 +581,46 @@ code-audit (验证效果)
 
 ## GitHub Actions 自动化
 
-issue-manager 可以生成 GitHub Actions 工作流，实现自动化：
+issue-manager 包含多个 GitHub Actions 工作流，实现全自动的 issue 管理：
+
+### 已部署的工作流
+
+详细文档请查看 [workflows/README.md](./workflows/README.md)
+
+1. **claude-code-pr-review.yml** - PR 代码审查
+   - 使用 /code-audit 自动审查每个 PR
+   - 检查 Next.js 最佳实践、代码重复等
+
+2. **claude-code-issue-triage.yml** - Issue 自动分诊
+   - 新 issue 打开时自动分析
+   - 建议分类、优先级和标签
+
+3. **claude-code-auto-fix.yml** - 两阶段自动修复
+   - 阶段 1：AI 提出修复方案
+   - 阶段 2：用户确认后执行修复
+   - 自动创建修复 PR
+
+4. **claude-code-issue-chat.yml** - Issue 对话
+   - AI 自动回复 issue 中的评论
+   - 支持多轮对话和代码查看
+
+5. **claude-code-confirm-fix.yml** - 确认修复指令（新增）
+   - 检测用户评论中的确认指令（`/confirm-fix`、`同意修复`等）
+   - 自动添加 `fix-confirmed` 标签触发修复
+   - 无需手动操作标签
+
+### 用户体验优化
+
+通过评论指令确认修复方案，无需手动添加标签：
+
+1. AI 提出修复方案（发布在 issue 评论中）
+2. 用户阅读后，在评论中回复：
+   - `/confirm-fix`
+   - `同意修复`
+   - `确认修复`
+3. 自动添加 `fix-confirmed` 标签
+4. 触发修复工作流执行修复
+5. 创建草稿 PR
 
 ### 生成工作流文件
 
