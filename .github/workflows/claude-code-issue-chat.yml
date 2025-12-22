@@ -62,9 +62,11 @@ jobs:
             4. 如果用户提供了额外信息，确认收到并更新你的理解
             5. 注意上下文，理解完整的讨论历史
 
+            **回复方式**:
+            使用 `gh issue comment ${{ github.event.issue.number }} --body "你的回复内容"` 来发布评论
+
             **可用工具**:
             - Read/Grep/Glob 查看代码
             - Bash 执行命令（包括 gh 命令管理 issues、PR、标签等）
-            - 你的文本回复会自动作为评论发布到此 issue
 
           claude_args: "--max-turns 10 --allowed-tools Read,Grep,Glob,Bash"
