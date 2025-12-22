@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Loader2, Sparkles, RefreshCw, X, ImagePlus, ZoomIn, Pencil } from 'lucide-react'
+import { Loader2, Sparkles, RefreshCw, X, ImagePlus, ZoomIn, Pencil, Upload, Check } from 'lucide-react'
 import { uploadBase64Image } from '@/lib/utils/image'
 import { ChuangkitEditor } from './ChuangkitEditor'
 import { generateImage, generateImagePrompt, analyzeReferenceImage } from '@/actions/image'
@@ -138,6 +138,20 @@ export function ImageGenerator({
   const [faceSeed, setFaceSeed] = useState<string | null>(initialFaceSeed || null)
   const [createdBlobUrl, setCreatedBlobUrl] = useState<string | null>(null)
   const [chuangkitDesignId, setChuangkitDesignId] = useState<string | null>(initialDesignId || null)
+
+  // 上传状态
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadComplete, setUploadComplete] = useState(false)
+
+  // 上传完成后自动隐藏提示
+  React.useEffect(() => {
+    if (uploadComplete) {
+      const timer = setTimeout(() => {
+        setUploadComplete(false)
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [uploadComplete])
 
   // 重新生成原因选择相关状态
   const [showRegenDialog, setShowRegenDialog] = useState(false)
@@ -286,26 +300,45 @@ export function ImageGenerator({
         throw new Error(imageResult.error || '图片生成失败')
       }
 
-      // 上传到 OSS 获取永久 URL
-      const { ossUrl, displayUrl } = await uploadImageToOSS(imageResult.imageUrl, imageType)
+      const rawImageUrl = imageResult.imageUrl
 
-      // 释放旧的 blob URL
-      if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(createdBlobUrl)
-      }
-      if (displayUrl.startsWith('blob:')) {
+      // 立即显示生成的图片（先用原始 URL 或 base64）
+      let displayUrl = rawImageUrl
+      if (rawImageUrl.startsWith('data:')) {
+        // base64 转 blob URL 用于显示
+        const blob = await fetch(rawImageUrl).then(r => r.blob())
+        displayUrl = URL.createObjectURL(blob)
+        if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(createdBlobUrl)
+        }
         setCreatedBlobUrl(displayUrl)
       }
 
+      // 立即显示图片
       setImageUrl(displayUrl)
-      // 新生成的图片清除旧的设计稿 ID（因为是全新的图片）
       setChuangkitDesignId(null)
-      onImageGenerated?.(ossUrl, aiGeneratedPrompt)
+      setIsGenerating(false)
+
+      // 后台上传到 OSS
+      setIsUploading(true)
+      setUploadComplete(false)
+
+      try {
+        const { ossUrl } = await uploadImageToOSS(rawImageUrl, imageType)
+        setUploadComplete(true)
+        // 通知父组件（使用 OSS URL）
+        onImageGenerated?.(ossUrl, aiGeneratedPrompt)
+      } catch (uploadErr) {
+        console.error('OSS upload error:', uploadErr)
+        // 上传失败时，仍然使用原始 URL 通知父组件
+        onImageGenerated?.(rawImageUrl, aiGeneratedPrompt)
+      } finally {
+        setIsUploading(false)
+      }
     } catch (err: unknown) {
       console.error('Image generation error:', err)
       const errorMessage = err instanceof Error ? err.message : '图片生成失败'
       setError(errorMessage)
-    } finally {
       setIsGenerating(false)
     }
   }
@@ -363,26 +396,41 @@ export function ImageGenerator({
         throw new Error(imageResult.error || '图片生成失败')
       }
 
-      // 上传到 OSS 获取永久 URL
-      const { ossUrl, displayUrl } = await uploadImageToOSS(imageResult.imageUrl, imageType)
+      const rawImageUrl = imageResult.imageUrl
 
-      // 释放旧的 blob URL
-      if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(createdBlobUrl)
-      }
-      if (displayUrl.startsWith('blob:')) {
+      // 立即显示生成的图片
+      let displayUrl = rawImageUrl
+      if (rawImageUrl.startsWith('data:')) {
+        const blob = await fetch(rawImageUrl).then(r => r.blob())
+        displayUrl = URL.createObjectURL(blob)
+        if (createdBlobUrl && createdBlobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(createdBlobUrl)
+        }
         setCreatedBlobUrl(displayUrl)
       }
 
       setImageUrl(displayUrl)
-      // 新生成的图片清除旧的设计稿 ID（因为是全新的图片）
       setChuangkitDesignId(null)
-      onImageGenerated?.(ossUrl, aiGeneratedPrompt)
+      setIsChangingFace(false)
+
+      // 后台上传到 OSS
+      setIsUploading(true)
+      setUploadComplete(false)
+
+      try {
+        const { ossUrl } = await uploadImageToOSS(rawImageUrl, imageType)
+        setUploadComplete(true)
+        onImageGenerated?.(ossUrl, aiGeneratedPrompt)
+      } catch (uploadErr) {
+        console.error('OSS upload error:', uploadErr)
+        onImageGenerated?.(rawImageUrl, aiGeneratedPrompt)
+      } finally {
+        setIsUploading(false)
+      }
     } catch (err: unknown) {
       console.error('Change face error:', err)
       const errorMessage = err instanceof Error ? err.message : '切换人脸失败'
       setError(errorMessage)
-    } finally {
       setIsChangingFace(false)
     }
   }
@@ -460,6 +508,19 @@ export function ImageGenerator({
             alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
             className="w-full h-full object-contain"
           />
+          {/* 上传进度指示器 */}
+          {isUploading && (
+            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs py-1 px-2 flex items-center gap-1.5">
+              <Upload className="h-3 w-3 animate-pulse" />
+              <span>上传中...</span>
+            </div>
+          )}
+          {uploadComplete && !isUploading && (
+            <div className="absolute bottom-0 left-0 right-0 bg-green-600/80 text-white text-xs py-1 px-2 flex items-center gap-1.5">
+              <Check className="h-3 w-3" />
+              <span>已保存</span>
+            </div>
+          )}
           {/* 操作按钮 */}
           <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
@@ -651,6 +712,19 @@ export function ImageGenerator({
                 alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
                 className="w-full h-auto rounded-lg"
               />
+              {/* 上传进度指示器 */}
+              {isUploading && (
+                <div className="absolute bottom-2 left-2 right-2 bg-black/60 text-white text-sm py-1.5 px-3 rounded flex items-center gap-2">
+                  <Upload className="h-4 w-4 animate-pulse" />
+                  <span>正在上传到云端...</span>
+                </div>
+              )}
+              {uploadComplete && !isUploading && (
+                <div className="absolute bottom-2 left-2 right-2 bg-green-600/80 text-white text-sm py-1.5 px-3 rounded flex items-center gap-2">
+                  <Check className="h-4 w-4" />
+                  <span>已保存到云端</span>
+                </div>
+              )}
               {/* 操作按钮 */}
               <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button

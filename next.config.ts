@@ -6,8 +6,6 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '10mb',
     },
   },
-  // 启用 instrumentation hook（后台任务运行器）
-  instrumentationHook: true,
   // 让 Vercel serverless 函数包含 prompts 目录
   outputFileTracingIncludes: {
     '/api/**': ['./prompts/**/*'],
