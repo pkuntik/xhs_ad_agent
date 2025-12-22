@@ -13,8 +13,11 @@ permissions:
 jobs:
   chat:
     runs-on: ubuntu-latest
-    # 只在 issue 评论时触发，不在 PR 评论时触发
-    if: github.event.issue.pull_request == null
+    # 只在 issue 评论时触发，不在 PR 评论时触发，且评论者不是 bot
+    if: |
+      github.event.issue.pull_request == null &&
+      github.event.comment.user.type != 'Bot' &&
+      github.event.sender.login != 'github-actions[bot]'
 
     steps:
       - name: 检出代码
