@@ -12,7 +12,9 @@
       "Bash(npx:*)",
       "Bash(git:*)",
       "Bash(cd:*)",
-      "Bash(del \"e:\\\\2025\\\\xhs_ad_agent\\\\types\\\\author.ts\")"
+      "Bash(del \"e:\\\\2025\\\\xhs_ad_agent\\\\types\\\\author.ts\")",
+      "Skill(code-audit)",
+      "Skill(code-audit:*)"
     ]
   }
 }
