@@ -62,10 +62,13 @@ jobs:
             4. 如果用户提供了额外信息，确认收到并更新你的理解
             5. 注意上下文，理解完整的讨论历史
 
-            **重要说明**:
-            - 你已经有完整的 issue 信息和所有评论历史，不需要使用 gh 命令查询
-            - 不要使用 Bash 工具或 gh 命令来发表评论
-            - 直接在你的回复中写出想说的内容，GitHub Actions 会自动将你的回复发布为评论
-            - 只使用 Read/Grep/Glob 等工具来查看代码，不要使用 Bash 执行命令
+            **可用工具**:
+            - 使用 Read/Grep/Glob 查看代码
+            - 使用 gh 命令查看其他 issues、创建 PR、更新标签等
+            - 你的文本回复会自动作为评论发布到 issue
 
-          claude_args: "--max-turns 5"
+            **重要限制**:
+            - 不要使用 `gh issue comment` 发表评论（你的回复会自动发布）
+            - 不要修改代码或提交代码（这应该在本地或其他工作流中完成）
+
+          claude_args: "--max-turns 10 --allowed-tools Read,Grep,Glob,Bash"
