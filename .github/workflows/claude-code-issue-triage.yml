@@ -1,0 +1,48 @@
+name: Claude Code - Issue 自动分诊
+
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: Claude 自动分诊
+        uses: anthropics/claude-code-action@v1
+        env:
+          # 支持自定义 Anthropic API Base URL
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          prompt: |
+            你是这个仓库的 Issue 分诊机器人。
+
+            请分析当前 issue（#${{ github.event.issue.number }}）：
+
+            1. **分类**：判断类型（bug / enhancement / documentation / question）
+            2. **优先级**：评估影响范围（priority-high / priority-medium / priority-low）
+            3. **模块**：识别涉及的模块（可能的标签：ui-consistency, tech-debt, performance, type-safety）
+            4. **复现信息**：检查是否提供了足够的复现步骤，如果缺失，列出需要补充的信息
+            5. **建议标签**：在回复末尾用这个格式输出：
+               ```
+               建议标签: bug, priority-high, ui-consistency
+               ```
+
+            请在 issue 评论中回复你的分析。
+
+            注意：你只能**建议**标签，不能直接添加标签。
+
+          claude_args: "--max-turns 3"
+
+      # 如果需要自动打标签，可以添加后续步骤解析 Claude 的输出
+      # 但这需要额外的脚本逻辑，这里暂时只让 Claude 建议

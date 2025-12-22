@@ -1,0 +1,149 @@
+name: Claude Code - 安全自动修复
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  auto-fix:
+    # 🔒 安全设计：必须同时满足两个条件
+    # 1. 有 'auto-fix-approved' 标签（由维护者手动添加）
+    # 2. 有 'ai-safe' 标签（表示这是简单、安全的修复）
+    if: |
+      contains(github.event.issue.labels.*.name, 'auto-fix-approved') &&
+      contains(github.event.issue.labels.*.name, 'ai-safe')
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          # 使用 GitHub App token 而非 GITHUB_TOKEN
+          # 这样创建的 PR 可以触发其他 CI workflow
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 创建修复分支
+        run: |
+          ISSUE_NUM=${{ github.event.issue.number }}
+          BRANCH_NAME="auto-fix/issue-${ISSUE_NUM}"
+          git checkout -b "$BRANCH_NAME"
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+      - name: Claude 自动修复
+        uses: anthropics/claude-code-action@v1
+        env:
+          # 支持自定义 Anthropic API Base URL
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          prompt: |
+            你是自动修复机器人。
+
+            当前 issue: #${{ github.event.issue.number }}
+
+            ⚠️ **重要安全限制**：
+            - 只能修复 import 排序、代码格式化等**简单、低风险**的问题
+            - 不得修改业务逻辑
+            - 不得修改配置文件（.env, package.json 等）
+            - 不得删除超过 50 行代码
+            - 不得删除 console.log（可能是有意保留的）
+
+            请：
+            1. 使用 /issue-manager 读取 issue 详情
+            2. 根据 issue 描述进行修复
+            3. 修复后运行 `pnpm tsc --noEmit` 验证
+            4. 如果修复成功，提交代码
+
+            提交信息格式：
+            ```
+            fix: [简短描述]
+
+            Fixes #${{ github.event.issue.number }}
+
+            🤖 由 Claude Code 自动修复
+            ```
+
+          claude_args: "--max-turns 10"
+
+      - name: 推送分支
+        run: |
+          git push origin "$BRANCH_NAME" || echo "没有改动需要推送"
+
+      - name: 创建 PR（如果有改动）
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issueNum = ${{ github.event.issue.number }};
+            const branchName = process.env.BRANCH_NAME;
+
+            // 检查分支是否有提交
+            const { data: comparison } = await github.rest.repos.compareCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              base: 'main',
+              head: branchName,
+            });
+
+            if (comparison.ahead_by === 0) {
+              // 没有改动，在 issue 中说明
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNum,
+                body: '🤖 我分析了这个问题，但没有找到可以自动修复的代码。可能需要人工处理。',
+              });
+              return;
+            }
+
+            // 创建 PR
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🤖 自动修复: ${context.payload.issue.title}`,
+              head: branchName,
+              base: 'main',
+              body: `## 自动修复
+
+这个 PR 自动修复了 #${issueNum}。
+
+⚠️ **请仔细 Review**：
+- [ ] 检查修复是否正确
+- [ ] 验证没有引入新问题
+- [ ] 确认没有删除重要代码
+
+关闭 #${issueNum}
+
+---
+🤖 由 Claude Code 自动创建`,
+              draft: true,  // 🔒 默认创建为草稿 PR，需要维护者手动 Ready for review
+            });
+
+            // 在 issue 中评论
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNum,
+              body: `🤖 我已创建修复 PR（草稿）: #${pr.number}\n\n请 review 后再合并。`,
+            });
+
+# ⚠️ 重要安全注意事项：
+#
+# 1. 这个工作流需要两个标签才会触发（'auto-fix-approved' + 'ai-safe'）
+#    - 维护者必须手动审核 issue 后才添加这些标签
+#
+# 2. 创建的 PR 默认是 draft 状态，必须人工 review
+#
+# 3. 不要在这个工作流里暴露敏感 secrets
+#
+# 4. 建议配合 CODEOWNERS 和 branch protection rules 使用
+#
+# 5. 考虑添加额外的检查（如代码 diff 大小限制）

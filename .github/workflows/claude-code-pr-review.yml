@@ -1,0 +1,54 @@
+name: Claude Code - PR 审查
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # 也支持评论触发
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  claude-review:
+    # 仅当是 PR 评论且包含 @claude
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, '@claude'))
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史
+
+      - name: 运行 Claude Code 审查
+        uses: anthropics/claude-code-action@v1
+        env:
+          # 支持自定义 Anthropic API Base URL
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # 使用项目的 code-audit skill
+          prompt: |
+            请用 /code-audit 审查这个 PR 的改动。
+
+            重点关注：
+            1. Next.js 15 最佳实践
+            2. 代码重复和复用性
+            3. 组件一致性
+            4. 无效代码清理
+
+            生成审查报告并发布到 PR 评论中。
+
+          # Claude Code CLI 参数
+          claude_args: "--max-turns 5"
+
+      # 注意：Claude Code Action 会自动发布评论到 PR
+      # 不需要额外的步骤来创建评论

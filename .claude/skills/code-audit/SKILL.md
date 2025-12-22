@@ -113,7 +113,6 @@ allowed-tools: Read, Grep, Glob, Bash, WebSearch
   - 未使用的函数、变量、类型定义
   - 未使用的导入（import）
   - 注释掉的大段代码块（超过 10 行）
-  - 遗留的 console.log / debugger 语句
   - TODO/FIXME 注释从未处理
 - **无效逻辑检测**：
   - 永远为 true/false 的条件判断
@@ -208,7 +207,6 @@ allowed-tools: Read, Grep, Glob, Bash, WebSearch
 9. **无效逻辑检测**:
    - 查找未使用的导入（import）
    - 检测注释掉的代码块
-   - 查找 console.log / debugger
    - 检查 TODO/FIXME 标记
    - 业务逻辑是否误放在组件中（应该在 Server Actions）
    - 硬编码的业务规则
