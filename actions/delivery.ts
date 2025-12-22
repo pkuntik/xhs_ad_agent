@@ -9,6 +9,7 @@ import type { Campaign } from '@/types/campaign'
 import type { DeliveryLog, DeliveryDecision } from '@/types/delivery-log'
 import { getCurrentUserId } from '@/lib/auth/session'
 import { deductBalance } from '@/lib/billing/service'
+import { ChipsAdvertiseTarget } from '@/lib/xhs/api/campaign'
 
 // 默认阈值配置
 const DEFAULT_THRESHOLDS: AccountThresholds = {
@@ -292,7 +293,11 @@ export async function checkAndDecide(
 
     // 暂停当前计划
     try {
-      await campaignApi.pauseCampaign({ cookie, campaignId: campaign.campaignId })
+      if (campaign.orderNo) {
+        await campaignApi.cancelChipsOrder({ cookie, orderNo: campaign.orderNo })
+      } else if (campaign.campaignId) {
+        await campaignApi.pauseCampaign({ cookie, campaignId: campaign.campaignId })
+      }
     } catch (e) {
       console.warn('暂停计划 API 调用失败:', e)
     }
@@ -332,7 +337,11 @@ export async function checkAndDecide(
   await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
 
   try {
-    await campaignApi.pauseCampaign({ cookie, campaignId: campaign.campaignId })
+    if (campaign.orderNo) {
+      await campaignApi.cancelChipsOrder({ cookie, orderNo: campaign.orderNo })
+    } else if (campaign.campaignId) {
+      await campaignApi.pauseCampaign({ cookie, campaignId: campaign.campaignId })
+    }
   } catch (e) {
     console.warn('暂停计划 API 调用失败:', e)
   }
@@ -414,7 +423,11 @@ export async function pauseDelivery(
     const cookie = account.cookie
 
     try {
-      await campaignApi.pauseCampaign({ cookie, campaignId: campaign.campaignId })
+      if (campaign.orderNo) {
+        await campaignApi.cancelChipsOrder({ cookie, orderNo: campaign.orderNo })
+      } else if (campaign.campaignId) {
+        await campaignApi.pauseCampaign({ cookie, campaignId: campaign.campaignId })
+      }
     } catch (e) {
       console.warn('暂停计划 API 调用失败:', e)
     }
@@ -447,6 +460,11 @@ export async function resumeDelivery(
       return { success: false, error: '计划不存在' }
     }
 
+    // 薯条订单不支持恢复，需要重新创建
+    if (campaign.type === 'chips' || campaign.orderNo) {
+      return { success: false, error: '薯条订单不支持恢复，请重新创建投放' }
+    }
+
     const account = await db
       .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
       .findOne({ _id: campaign.accountId })
@@ -460,7 +478,9 @@ export async function resumeDelivery(
     const cookie = account.cookie
 
     try {
-      await campaignApi.resumeCampaign({ cookie, campaignId: campaign.campaignId })
+      if (campaign.campaignId) {
+        await campaignApi.resumeCampaign({ cookie, campaignId: campaign.campaignId })
+      }
     } catch (e) {
       console.warn('恢复计划 API 调用失败:', e)
     }
@@ -496,7 +516,8 @@ import type { DeliveryConfig, DeliveryStats, DeliveryStatus } from '@/types/work
 // 默认托管配置
 const DEFAULT_DELIVERY_CONFIG: DeliveryConfig = {
   enabled: false,
-  budget: 2000,
+  budget: 75,                   // 75元
+  duration: 21600,              // 6小时
   checkThreshold1: 60,
   checkThreshold2: 120,
   minAttempts: 3,
@@ -557,11 +578,12 @@ export async function updateDeliveryConfig(
 
 /**
  * 开始托管投放
+ * 只更新状态，实际订单创建由后台任务 processManagedDeliveries 处理
  */
 export async function startManagedDelivery(
   workId: string,
   publicationIndex: number
-): Promise<{ success: boolean; error?: string; campaignId?: string }> {
+): Promise<{ success: boolean; error?: string }> {
   try {
     const userId = await getCurrentUserId()
     if (!userId) {
@@ -606,104 +628,25 @@ export async function startManagedDelivery(
     if (!account.cookie) {
       return { success: false, error: '账号 Cookie 未设置' }
     }
-    if (!account.advertiserId) {
-      return { success: false, error: '账号广告主 ID 未设置' }
-    }
-
-    // 扣费
-    const deductResult = await deductBalance(userId, 'xhs_api_call', {
-      relatedType: 'managed_delivery',
-      description: '小红书API调用-托管投放',
-      metadata: { workId, publicationIndex },
-    })
-
-    if (!deductResult.success) {
-      return { success: false, error: deductResult.error }
-    }
 
     const config = publication.deliveryConfig || DEFAULT_DELIVERY_CONFIG
     const stats = publication.deliveryStats || INITIAL_DELIVERY_STATS
-    const bidAmount = account.defaultBidAmount ?? 30
 
-    // 调用小红书 API 创建投放计划
-    let xhsResult: { campaignId: string; unitId: string }
-    try {
-      xhsResult = await campaignApi.createCampaign({
-        cookie: account.cookie,
-        advertiserId: account.advertiserId,
-        noteId: publication.noteId,
-        budget: config.budget,
-        bidAmount,
-        objective: 'lead_collection',
-      })
-    } catch (apiError) {
-      console.warn('小红书 API 未实现，使用模拟数据:', apiError)
-      xhsResult = {
-        campaignId: `mock_managed_${Date.now()}`,
-        unitId: `mock_unit_${Date.now()}`,
-      }
-    }
-
-    // 保存计划到数据库
-    const campaign: Omit<Campaign, '_id'> = {
-      accountId: new ObjectId(publication.accountId),
-      workId: new ObjectId(workId),
-      campaignId: xhsResult.campaignId,
-      unitId: xhsResult.unitId,
-      name: `托管投放 - ${publication.noteDetail?.title || publication.noteId}`,
-      objective: 'lead_collection',
-      budget: config.budget,
-      bidAmount,
-      targeting: {},
-      status: 'active',
-      currentBatch: stats.currentAttempt + 1,
-      batchStartAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-
-    const result = await db.collection(COLLECTIONS.CAMPAIGNS).insertOne(campaign)
-    const campaignId = result.insertedId.toString()
-
-    // 更新 Publication 状态
+    // 只更新状态，标记为托管中，后台任务会处理实际的订单创建
     await db.collection(COLLECTIONS.WORKS).updateOne(
       { _id: new ObjectId(workId) },
       {
         $set: {
           [`publications.${publicationIndex}.deliveryStatus`]: 'running' as DeliveryStatus,
-          [`publications.${publicationIndex}.currentCampaignId`]: campaignId,
-          [`publications.${publicationIndex}.deliveryConfig.enabled`]: true,
-          [`publications.${publicationIndex}.deliveryStats.totalAttempts`]: stats.totalAttempts + 1,
-          [`publications.${publicationIndex}.deliveryStats.currentAttempt`]: stats.currentAttempt + 1,
-          [`publications.${publicationIndex}.deliveryStats.lastAttemptAt`]: new Date(),
+          [`publications.${publicationIndex}.deliveryConfig`]: { ...config, enabled: true },
+          [`publications.${publicationIndex}.deliveryStats`]: stats,
           status: 'promoting',
           updatedAt: new Date(),
         },
       }
     )
 
-    // 创建效果检查任务（30分钟后开始检查）
-    await db.collection(COLLECTIONS.TASKS).insertOne({
-      type: 'check_managed_campaign',
-      accountId: new ObjectId(publication.accountId),
-      workId: new ObjectId(workId),
-      campaignId: result.insertedId,
-      publicationIndex,
-      status: 'pending',
-      priority: 2,
-      scheduledAt: new Date(Date.now() + 30 * 60 * 1000),
-      params: {
-        checkThreshold1: config.checkThreshold1,
-        checkThreshold2: config.checkThreshold2,
-        minAttempts: config.minAttempts,
-        minSuccessRate: config.minSuccessRate,
-      },
-      retryCount: 0,
-      maxRetries: 3,
-      createdAt: new Date(),
-    })
-
-    return { success: true, campaignId }
+    return { success: true }
   } catch (error) {
     console.error('开始托管投放失败:', error)
     return { success: false, error: error instanceof Error ? error.message : '未知错误' }
@@ -747,12 +690,15 @@ export async function stopManagedDelivery(
 
         if (account && account.cookie) {
           try {
-            await campaignApi.pauseCampaign({
-              cookie: account.cookie,
-              campaignId: campaign.campaignId,
-            })
+            // 薯条订单使用取消接口
+            if (campaign.orderNo) {
+              await campaignApi.cancelChipsOrder({
+                cookie: account.cookie,
+                orderNo: campaign.orderNo,
+              })
+            }
           } catch (e) {
-            console.warn('暂停计划 API 调用失败:', e)
+            console.warn('取消薯条订单失败:', e)
           }
         }
 
@@ -1060,10 +1006,17 @@ export async function checkManagedCampaign(
 
   // 暂停当前计划
   try {
-    await campaignApi.pauseCampaign({
-      cookie: account.cookie,
-      campaignId: campaign.campaignId,
-    })
+    if (campaign.orderNo) {
+      await campaignApi.cancelChipsOrder({
+        cookie: account.cookie,
+        orderNo: campaign.orderNo,
+      })
+    } else if (campaign.campaignId) {
+      await campaignApi.pauseCampaign({
+        cookie: account.cookie,
+        campaignId: campaign.campaignId,
+      })
+    }
   } catch (e) {
     console.warn('暂停计划 API 调用失败:', e)
   }
@@ -1169,5 +1122,222 @@ async function scheduleManagedCheck(
       maxRetries: 3,
       createdAt: new Date(),
     })
+  }
+}
+
+// ============================================
+// 托管投放后台处理
+// ============================================
+
+interface ManagedDeliveryResult {
+  workId: string
+  publicationIndex: number
+  action: 'created' | 'monitoring' | 'skipped' | 'error'
+  orderNo?: string
+  error?: string
+}
+
+/**
+ * 处理所有托管中的投放
+ * 由 Cron 定时调用
+ */
+export async function processManagedDeliveries(): Promise<{
+  processed: number
+  results: ManagedDeliveryResult[]
+}> {
+  const results: ManagedDeliveryResult[] = []
+
+  try {
+    const db = await getDb()
+
+    // 查找所有托管中的作品
+    const works = await db
+      .collection<Work>(COLLECTIONS.WORKS)
+      .find({
+        'publications.deliveryStatus': 'running',
+      })
+      .toArray()
+
+    for (const work of works) {
+      if (!work.publications) continue
+
+      for (let i = 0; i < work.publications.length; i++) {
+        const publication = work.publications[i]
+
+        // 只处理托管中的笔记
+        if (publication.deliveryStatus !== 'running') continue
+        if (!publication.noteId || !publication.accountId) continue
+
+        const result = await processOnePublication(db, work, i, publication)
+        results.push(result)
+      }
+    }
+
+    return { processed: results.length, results }
+  } catch (error) {
+    console.error('处理托管投放失败:', error)
+    return { processed: 0, results }
+  }
+}
+
+/**
+ * 处理单个 Publication 的托管逻辑
+ */
+async function processOnePublication(
+  db: Db,
+  work: Work,
+  publicationIndex: number,
+  publication: NonNullable<Work['publications']>[number]
+): Promise<ManagedDeliveryResult> {
+  const workId = work._id.toString()
+
+  try {
+    // 获取账号信息
+    const account = await db
+      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+      .findOne({ _id: new ObjectId(publication.accountId!) })
+
+    if (!account || !account.cookie || account.status !== 'active') {
+      return {
+        workId,
+        publicationIndex,
+        action: 'skipped',
+        error: '账号不可用',
+      }
+    }
+
+    // 检查是否有活跃的投放订单
+    const activeCampaign = await db
+      .collection<Campaign>(COLLECTIONS.CAMPAIGNS)
+      .findOne({
+        workId: work._id,
+        status: 'active',
+        type: 'chips',
+      })
+
+    if (activeCampaign) {
+      // 有活跃订单，检查是否已有检查任务
+      const existingTask = await db.collection(COLLECTIONS.TASKS).findOne({
+        campaignId: activeCampaign._id,
+        type: 'check_managed_campaign',
+        status: 'pending',
+      })
+
+      if (!existingTask) {
+        // 没有检查任务，创建一个
+        const config = publication.deliveryConfig || DEFAULT_DELIVERY_CONFIG
+        await scheduleManagedCheck(
+          db,
+          activeCampaign._id.toString(),
+          workId,
+          publicationIndex,
+          {
+            checkThreshold1: config.checkThreshold1,
+            checkThreshold2: config.checkThreshold2,
+            minAttempts: config.minAttempts,
+            minSuccessRate: config.minSuccessRate,
+          },
+          30 // 30分钟后检查
+        )
+      }
+
+      return {
+        workId,
+        publicationIndex,
+        action: 'monitoring',
+        orderNo: activeCampaign.orderNo,
+      }
+    }
+
+    // 没有活跃订单，创建新订单
+    const config = publication.deliveryConfig || DEFAULT_DELIVERY_CONFIG
+    const stats = publication.deliveryStats || INITIAL_DELIVERY_STATS
+
+    // 调用薯条 API 创建投放订单
+    const chipsResult = await campaignApi.createChipsOrder({
+      cookie: account.cookie,
+      order: {
+        noteId: publication.noteId!,
+        advertiseTarget: ChipsAdvertiseTarget.PRIVATE_MESSAGE,
+        budget: config.budget * 100,  // 元转分
+        totalTime: config.duration || 21600,
+        planStartTime: 0,
+        smartTarget: 0,
+      },
+    })
+
+    if (!chipsResult.success) {
+      return {
+        workId,
+        publicationIndex,
+        action: 'error',
+        error: chipsResult.error || '创建订单失败',
+      }
+    }
+
+    // 保存计划到数据库
+    const campaign: Omit<Campaign, '_id'> = {
+      accountId: new ObjectId(publication.accountId!),
+      workId: work._id,
+      type: 'chips',
+      orderNo: chipsResult.orderNo,
+      name: `托管投放 - ${publication.noteDetail?.title || publication.noteId}`,
+      objective: 'lead_collection',
+      budget: config.budget,
+      duration: config.duration || 21600,
+      targeting: {},
+      status: 'active',
+      currentBatch: stats.currentAttempt + 1,
+      batchStartAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    const insertResult = await db.collection(COLLECTIONS.CAMPAIGNS).insertOne(campaign)
+    const campaignId = insertResult.insertedId.toString()
+
+    // 更新 Publication 状态
+    await db.collection(COLLECTIONS.WORKS).updateOne(
+      { _id: work._id },
+      {
+        $set: {
+          [`publications.${publicationIndex}.currentCampaignId`]: campaignId,
+          [`publications.${publicationIndex}.deliveryStats.totalAttempts`]: stats.totalAttempts + 1,
+          [`publications.${publicationIndex}.deliveryStats.currentAttempt`]: stats.currentAttempt + 1,
+          [`publications.${publicationIndex}.deliveryStats.lastAttemptAt`]: new Date(),
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    // 创建效果检查任务（30分钟后）
+    await scheduleManagedCheck(
+      db,
+      campaignId,
+      workId,
+      publicationIndex,
+      {
+        checkThreshold1: config.checkThreshold1,
+        checkThreshold2: config.checkThreshold2,
+        minAttempts: config.minAttempts,
+        minSuccessRate: config.minSuccessRate,
+      },
+      30
+    )
+
+    return {
+      workId,
+      publicationIndex,
+      action: 'created',
+      orderNo: chipsResult.orderNo,
+    }
+  } catch (error) {
+    console.error(`处理 Publication ${workId}/${publicationIndex} 失败:`, error)
+    return {
+      workId,
+      publicationIndex,
+      action: 'error',
+      error: error instanceof Error ? error.message : '未知错误',
+    }
   }
 }

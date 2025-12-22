@@ -108,7 +108,7 @@ export interface ParsedNoteIndexes {
 }
 
 // 辅助函数：解析指标数值
-export function parseNoteIndexes(indexes: NoteIndex[]): ParsedNoteIndexes {
+export function parseNoteIndexes(indexes: NoteIndex[] | undefined | null): ParsedNoteIndexes {
   const result: ParsedNoteIndexes = {
     impressions: 0,
     reads: 0,
@@ -116,6 +116,11 @@ export function parseNoteIndexes(indexes: NoteIndex[]): ParsedNoteIndexes {
     likes: 0,
     collects: 0,
     comments: 0,
+  }
+
+  // 如果 indexes 不存在或不是数组，返回默认值
+  if (!indexes || !Array.isArray(indexes)) {
+    return result
   }
 
   for (const index of indexes) {

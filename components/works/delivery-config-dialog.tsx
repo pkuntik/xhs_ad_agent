@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Loader2, Settings, DollarSign, Target, RefreshCw, TrendingUp } from 'lucide-react'
+import { Loader2, Settings, DollarSign, Target, RefreshCw, TrendingUp, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { updateDeliveryConfig, startManagedDelivery } from '@/actions/delivery'
 import type { DeliveryConfig } from '@/types/work'
@@ -31,7 +31,8 @@ interface DeliveryConfigDialogProps {
 // 默认配置
 const DEFAULT_CONFIG: DeliveryConfig = {
   enabled: false,
-  budget: 2000,
+  budget: 75,
+  duration: 21600,              // 6小时
   checkThreshold1: 60,
   checkThreshold2: 120,
   minAttempts: 3,
@@ -124,14 +125,37 @@ export function DeliveryConfigDialog({
                 type="number"
                 value={config.budget}
                 onChange={(e) => setConfig({ ...config, budget: Number(e.target.value) })}
-                min={100}
-                max={10000}
-                step={100}
+                min={30}
+                max={500}
+                step={5}
               />
               <span className="text-sm text-muted-foreground">元</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              每次投放的预算上限，建议 2000 元
+              每次投放的预算上限，建议 75 元
+            </p>
+          </div>
+
+          {/* 投放时长 */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              投放时长
+            </Label>
+            <div className="flex items-center gap-2">
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={config.duration}
+                onChange={(e) => setConfig({ ...config, duration: Number(e.target.value) })}
+              >
+                <option value={10800}>3 小时</option>
+                <option value={21600}>6 小时</option>
+                <option value={43200}>12 小时</option>
+                <option value={86400}>24 小时</option>
+              </select>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              每次投放的持续时间
             </p>
           </div>
 

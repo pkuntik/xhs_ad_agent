@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { processPendingTasks } from '@/actions/task'
 import { syncPendingNotes } from '@/actions/note'
+import { processManagedDeliveries } from '@/actions/delivery'
 
 const CRON_SECRET = process.env.CRON_SECRET
 
@@ -8,7 +9,7 @@ const CRON_SECRET = process.env.CRON_SECRET
  * Cron 任务端点
  *
  * 由 Vercel Cron 每5分钟调用一次
- * 处理待执行的任务队列和笔记数据同步
+ * 处理待执行的任务队列、托管投放和笔记数据同步
  */
 export async function GET(request: NextRequest) {
   // 验证请求来源
@@ -24,6 +25,11 @@ export async function GET(request: NextRequest) {
     const { processed, results } = await processPendingTasks()
     console.log(`[Cron] 任务处理完成，共处理 ${processed} 个任务`)
 
+    // 处理托管投放
+    console.log('[Cron] 开始处理托管投放...')
+    const managedResult = await processManagedDeliveries()
+    console.log(`[Cron] 托管投放处理完成，共处理 ${managedResult.processed} 个`)
+
     // 同步笔记数据
     console.log('[Cron] 开始同步笔记数据...')
     const syncResult = await syncPendingNotes()
@@ -32,6 +38,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       tasks: { processed, results },
+      managedDeliveries: managedResult,
       noteSync: {
         synced: syncResult.synced,
         errors: syncResult.errors,

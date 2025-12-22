@@ -5,7 +5,8 @@ import type { CachedNoteDetail, NoteSnapshot, SyncLogEntry } from './note'
 // 托管投放配置
 export interface DeliveryConfig {
   enabled: boolean              // 托管开关
-  budget: number                // 单次预算（默认 2000）
+  budget: number                // 单次预算（元，默认 75）
+  duration: number              // 投放时长（秒，默认 21600=6小时）
   checkThreshold1: number       // 第一检查点消耗阈值（默认 60）
   checkThreshold2: number       // 第二检查点消耗阈值（默认 120）
   minAttempts: number           // 最小投放次数（至少投放 N 次才考虑停止，默认 3）

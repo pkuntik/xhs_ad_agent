@@ -6,6 +6,9 @@ export type CampaignStatus = 'pending' | 'active' | 'paused' | 'completed' | 'fa
 // 投放目标
 export type CampaignObjective = 'lead_collection' // 私信咨询量
 
+// 投放类型
+export type CampaignType = 'chips' | 'leona'  // 薯条 或 聚光
+
 // 定向配置
 export interface CampaignTargeting {
   regions?: string[]              // 地域定向
@@ -20,15 +23,22 @@ export interface Campaign {
   accountId: ObjectId
   workId: ObjectId
 
-  // 聚光平台信息
-  campaignId: string              // 聚光计划 ID
-  unitId: string                  // 单元 ID
+  // 投放类型
+  type?: CampaignType             // 默认 'chips'
+
+  // 薯条订单信息
+  orderNo?: string                // 薯条订单号
+
+  // 聚光平台信息（保留兼容）
+  campaignId?: string             // 聚光计划 ID
+  unitId?: string                 // 单元 ID
 
   // 计划配置
   name: string
   objective: CampaignObjective    // 目标: 私信咨询量
-  budget: number                  // 计划预算 (默认 2000)
-  bidAmount: number               // 出价
+  budget: number                  // 计划预算（元）
+  duration?: number               // 投放时长（秒）
+  bidAmount?: number              // 出价（聚光用）
 
   // 定向配置
   targeting: CampaignTargeting

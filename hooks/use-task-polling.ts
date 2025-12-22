@@ -2,22 +2,23 @@
 
 import { useEffect, useRef, useCallback } from 'react'
 import { processPendingTasks } from '@/actions/task'
+import { processManagedDeliveries } from '@/actions/delivery'
 
 interface UsePollingOptions {
-  interval?: number      // 轮询间隔（毫秒），默认 5 分钟
+  interval?: number      // 轮询间隔（毫秒），默认 5 秒
   enabled?: boolean      // 是否启用
   onError?: (error: Error) => void
 }
 
 /**
- * 轮询 Hook - 定时执行任务检查
+ * 轮询 Hook - 定时执行任务检查和托管投放处理
  *
  * 用于替代 Vercel Cron（Hobby 账户限制）
  * 当用户打开管理后台时，自动轮询执行待处理任务
  */
 export function useTaskPolling(options: UsePollingOptions = {}) {
   const {
-    interval = 5 * 60 * 1000, // 默认 5 分钟
+    interval = 5 * 1000, // 默认 5 秒
     enabled = true,
     onError,
   } = options
@@ -30,8 +31,15 @@ export function useTaskPolling(options: UsePollingOptions = {}) {
 
     isRunningRef.current = true
     try {
-      const result = await processPendingTasks()
-      console.log('[Polling] 任务执行结果:', result)
+      // 处理任务队列
+      const taskResult = await processPendingTasks()
+      console.log('[Polling] 任务执行结果:', taskResult)
+
+      // 处理托管投放
+      const managedResult = await processManagedDeliveries()
+      if (managedResult.processed > 0) {
+        console.log('[Polling] 托管投放处理:', managedResult)
+      }
     } catch (error) {
       console.error('[Polling] 任务执行失败:', error)
       onError?.(error instanceof Error ? error : new Error(String(error)))
@@ -46,7 +54,7 @@ export function useTaskPolling(options: UsePollingOptions = {}) {
     // 页面加载后立即执行一次
     const initialDelay = setTimeout(() => {
       executeTasks()
-    }, 5000) // 5秒后首次执行
+    }, 2000) // 2秒后首次执行
 
     // 设置定时轮询
     timerRef.current = setInterval(executeTasks, interval)
