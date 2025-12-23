@@ -120,6 +120,79 @@ export async function getAccountById(id: string): Promise<AccountListItem | null
   } as AccountListItem
 }
 
+// ============================================
+// 账号创建辅助函数
+// ============================================
+
+/**
+ * 检查用户登录状态和配额
+ */
+async function checkUserQuota(): Promise<{
+  success: false; error: string
+} | {
+  success: true; userId: string; user: User; db: Awaited<ReturnType<typeof getDb>>
+}> {
+  const currentUserId = await getCurrentUserId()
+  if (!currentUserId) {
+    return { success: false, error: '请先登录' }
+  }
+
+  const db = await getDb()
+  const user = await db.collection<User>(COLLECTIONS.USERS).findOne({
+    _id: new ObjectId(currentUserId)
+  })
+
+  if (!user) {
+    return { success: false, error: '用户不存在' }
+  }
+
+  // 检查是否超出免费额度
+  if (user.currentAccounts >= user.maxAccounts) {
+    const deductResult = await deductBalance(currentUserId, 'account_add', {
+      relatedType: 'account',
+      description: '添加账号(超额)',
+    })
+
+    if (!deductResult.success) {
+      return {
+        success: false,
+        error: `账号数量已达上限(${user.maxAccounts}个)，${deductResult.error}`
+      }
+    }
+  }
+
+  return { success: true, userId: currentUserId, user, db }
+}
+
+/**
+ * 验证 Cookie 并检查账号是否已存在
+ */
+async function validateCookieAndCheckDuplicate(
+  cookie: string,
+  db: Awaited<ReturnType<typeof getDb>>,
+  errorPrefix = 'Cookie 无效或已过期'
+): Promise<{
+  success: false; error: string
+} | {
+  success: true; cookieInfo: Awaited<ReturnType<typeof validateCookie>>
+}> {
+  const cookieInfo = await validateCookie(cookie)
+  if (!cookieInfo.valid) {
+    return { success: false, error: cookieInfo.errorMessage || errorPrefix }
+  }
+
+  if (cookieInfo.userId) {
+    const existing = await db
+      .collection(COLLECTIONS.ACCOUNTS)
+      .findOne({ visitorUserId: cookieInfo.userId })
+    if (existing) {
+      return { success: false, error: '该账号已存在' }
+    }
+  }
+
+  return { success: true, cookieInfo }
+}
+
 /**
  * 添加账号
  * name 为可选，如果不提供则使用从 Cookie 获取的昵称
