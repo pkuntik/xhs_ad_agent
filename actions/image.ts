@@ -89,30 +89,139 @@ function buildPromptSystemPrompt(imageType: 'cover' | 'content'): string {
 
   return `${SYSTEM_IDENTITY}
 
-你是小红书图片提示词专家。请为${imageTypeLabel}生成一段自然语言描述，直接发给 Gemini 3 生成图片。
+你是小红书图片提示词专家。请为${imageTypeLabel}生成结构化的图片描述JSON，用于精确控制图片生成。
 
-## 核心原则
+## 输出格式
 
-用自然的中文描述画面，像导演描述分镜一样，不要堆砌关键词。
+请严格按照以下JSON结构输出（根据实际需要选择相关字段）：
 
-## 描述要素
+\`\`\`json
+{
+  "canvas_specs": {
+    "orientation": "portrait | landscape | square",
+    "aspect_ratio": "9:16 | 16:9 | 1:1 | 3:4 | 4:3",
+    "layout_mode": "single | split_vertical | split_horizontal | grid_2x2 | collage | before_after",
+    "composition_type": "center | rule_of_thirds | symmetry | diagonal | frame_within_frame",
+    "composition_notes": "构图的具体说明和视觉重点",
+    "visual_flow": "视觉引导路线描述"
+  },
+  "regional_analysis": {
+    "is_contrast_scene": "boolean - 是否为对比场景（如前后对比、AB测试等）",
+    "contrast_type": "before_after | with_without | day_night | emotion_shift 等",
+    "regions": [
+      {
+        "id": "区域唯一标识，如 Main_Subject / Left_Before / Right_After / Background",
+        "position": "区域位置描述：left_half | right_half | top | bottom | center | full",
+        "content_state": "该区域主体的状态、表情、动作、穿着等详细描述",
+        "lighting_mood": "光线类型和氛围：natural_soft | golden_hour | studio | dim | backlit | high_key | low_key",
+        "color_palette": "具体配色：warm_amber | cool_blue | pastel | vibrant | desaturated | monochrome",
+        "texture_detail": "质感描述：smooth | rough | glossy | matte | skin_texture",
+        "beauty_filter_level": "none | raw | natural | enhanced | high | glamour | radiant",
+        "depth_of_field": "shallow | medium | deep - 景深效果",
+        "mood_keywords": ["情绪关键词数组"]
+      }
+    ]
+  },
+  "subject_specs": {
+    "type": "person | product | scene | food | pet | composite",
+    "gender": "female | male | neutral（如适用）",
+    "age_range": "年龄范围描述（如适用）",
+    "ethnicity": "Asian | Western 等（如适用）",
+    "pose": "姿态描述",
+    "expression": "表情描述",
+    "outfit": "服装描述",
+    "props": ["道具列表"],
+    "count": "主体数量"
+  },
+  "layer_stack": {
+    "layers": [
+      {
+        "type": "background | background_split | environment",
+        "description": "背景详细描述",
+        "blur_level": "none | slight | medium | heavy"
+      },
+      {
+        "type": "midground",
+        "description": "中景元素描述（如有）"
+      },
+      {
+        "type": "subject | subject_composite",
+        "fusion_logic": "多主体或分割主体时的融合逻辑",
+        "description": "主体详细描述"
+      },
+      {
+        "type": "foreground",
+        "description": "前景元素描述（如有）"
+      },
+      {
+        "type": "lighting_effects",
+        "description": "光效描述：lens_flare | bokeh | rim_light | shadow_play"
+      },
+      {
+        "type": "ui_overlay",
+        "elements": [
+          {
+            "type": "main_text | sub_text | tag | icon | badge | sticker | frame | watermark_area",
+            "content": "文字内容",
+            "font_style": "字体风格：sans-serif_bold | handwritten | elegant_serif | playful",
+            "color": "文字颜色",
+            "effect": "文字效果：glow | shadow | outline | gradient | 3d",
+            "outline_color": "描边颜色（如有）",
+            "background": "文字背景：none | semi_transparent | solid | blur",
+            "position": "位置：top_left | top_center | bottom_center | center 等",
+            "size": "small | medium | large | dominant",
+            "visual_hierarchy": "视觉层级说明"
+          }
+        ]
+      }
+    ]
+  },
+  "style_specs": {
+    "overall_style": "realistic | illustration | 3d_render | watercolor | sketch | collage",
+    "photo_style": "portrait | lifestyle | editorial | documentary | product_shot",
+    "camera_angle": "eye_level | low_angle | high_angle | bird_eye | worm_eye | dutch_angle",
+    "shot_type": "close_up | medium_shot | full_body | wide_shot | extreme_close_up",
+    "lens_effect": "normal | wide_angle | telephoto | macro | fisheye | tilt_shift",
+    "color_grading": "色彩调色风格",
+    "film_grain": "none | subtle | heavy",
+    "era_aesthetic": "modern | vintage | retro_90s | y2k | minimalist"
+  },
+  "reconstruction_prompt": {
+    "notes": "关键生成注意事项，确保效果的重点提示",
+    "main_prompt": "完整的图片生成提示词，用自然连贯的语言描述整个画面",
+    "style_suffix": "--ar 9:16 --style raw 等风格后缀",
+    "negative_prompt": "需要避免的元素",
+    "quality_tags": ["high_quality", "detailed", "professional", "8k"],
+    "controlnet_guidance": "如需精确控制，说明使用何种ControlNet及参数"
+  }
+}
+\`\`\`
 
-1. 主体是谁/是什么，在做什么
-2. 场景环境、光线氛围
-3. 构图方式（近景/半身/俯拍等）
-4. 如需文字，明确写出内容和位置
-5. 风格要真实自然，避免过度完美的 AI 感
+## 字段使用指南
+
+以上JSON结构仅作为参考模板，你可以：
+- **自由扩展**：根据具体场景添加任何有助于描述画面的新字段
+- **灵活省略**：不相关的字段可以不填写
+- **创造性命名**：用清晰直观的字段名描述特殊效果或元素
+
+例如，你可以添加：
+- \`hand_gesture\`: 手势描述
+- \`product_placement\`: 产品摆放方式
+- \`text_animation_hint\`: 文字动效提示
+- \`seasonal_elements\`: 季节性元素
+- \`brand_elements\`: 品牌相关元素
+- 任何你认为能让图片生成更精准的字段...
 
 ## ${imageTypeLabel}特点
 
-${imageType === 'cover' ? `封面图要有视觉冲击力，文字清晰醒目，能吸引点击。` : `配图要支撑正文内容，风格与笔记整体一致。`}
+${imageType === 'cover' ? `封面图要有视觉冲击力，文字清晰醒目，能吸引点击。ui_overlay层必须包含封面文案的详细样式描述，文字效果要突出。` : `配图要支撑正文内容，风格与笔记整体一致。如有文字覆盖，需在ui_overlay层详细描述。`}
 
 ## 输出要求
 
-- 直接输出提示词，不要解释
-- 用一段连贯的中文描述
-- 竖版 9:16 比例
-- 不要水印`
+- 直接输出JSON，不要任何解释或markdown代码块标记
+- main_prompt 用连贯的中文自然语言描述
+- 根据实际内容选择需要的字段，不必填写所有字段
+- negative_prompt 必须包含"水印、logo、变形、模糊"`
 }
 
 function buildPromptUserMessage(
