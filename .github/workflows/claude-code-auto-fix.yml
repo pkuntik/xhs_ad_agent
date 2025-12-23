@@ -26,6 +26,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Claude 分析并提出实施方案
+        id: propose_solution
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
@@ -67,6 +68,38 @@ jobs:
 
           claude_args: "--max-turns 50 --allowed-tools Read,Grep,Glob,Bash"
 
+      - name: 处理分析失败
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issueNumber = context.payload.issue.number;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                '❌ **方案分析失败**',
+                '',
+                '抱歉，分析 issue 并制定实施方案时遇到了问题。',
+                '',
+                '**可能的原因**：',
+                '- 问题过于复杂，AI 无法分析',
+                '- API 调用失败',
+                '- 代码库访问权限不足',
+                '',
+                '**建议**：',
+                '- 请查看 [Actions 运行日志](' + context.payload.repository.html_url + '/actions/runs/' + context.runId + ') 了解详情',
+                '- 简化 issue 描述，提供更明确的问题说明',
+                '- 或考虑手动修复此问题',
+                '',
+                '---',
+                '🤖 GitHub Actions 自动通知'
+              ].join('\n')
+            });
+
   # 第二阶段：执行实施
   execute-fix:
     # 🔒 条件：有全部三个标签（auto-fix-approved + ai-safe + fix-confirmed）
@@ -91,6 +124,7 @@ jobs:
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
 
       - name: Claude 执行实施
+        id: execute_solution
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
@@ -202,5 +236,38 @@ jobs:
               repo: context.repo.repo,
               issue_number: issueNum,
               body: `🤖 我已创建实施 PR（草稿）: #${pr.number}\n\n请 review 后再合并。`,
+            });
+
+      - name: 处理执行失败
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issueNumber = context.payload.issue.number;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                '❌ **自动实施失败**',
+                '',
+                '抱歉，执行方案时遇到了问题。',
+                '',
+                '**可能的原因**：',
+                '- 代码修改失败（语法错误、类型错误等）',
+                '- 构建或测试验证失败',
+                '- Git 操作失败',
+                '- API 调用超时或失败',
+                '',
+                '**建议**：',
+                '- 请查看 [Actions 运行日志](' + context.payload.repository.html_url + '/actions/runs/' + context.runId + ') 了解详情',
+                '- 检查是否需要调整实施方案',
+                '- 或考虑手动处理此问题',
+                '',
+                '---',
+                '🤖 GitHub Actions 自动通知'
+              ].join('\n')
             });
 

@@ -28,6 +28,7 @@ jobs:
           fetch-depth: 0  # 获取完整历史
 
       - name: 运行 Claude Code 审查
+        id: pr_review
         uses: anthropics/claude-code-action@v1
         env:
           # 支持自定义 Anthropic API Base URL
@@ -49,6 +50,44 @@ jobs:
 
           # Claude Code CLI 参数
           claude_args: "--max-turns 5"
+
+      - name: 处理审查失败
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // 获取 PR 编号
+            const prNumber = context.payload.pull_request?.number || context.payload.issue?.number;
+
+            if (!prNumber) {
+              console.log('无法确定 PR 编号');
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: [
+                '❌ **PR 代码审查失败**',
+                '',
+                '抱歉，审查此 PR 时遇到了问题。',
+                '',
+                '**可能的原因**：',
+                '- PR 改动过大或过于复杂',
+                '- 代码库访问权限不足',
+                '- API 调用失败或超时',
+                '',
+                '**建议**：',
+                '- 请查看 [Actions 运行日志](' + context.payload.repository.html_url + '/actions/runs/' + context.runId + ') 了解详情',
+                '- 尝试拆分 PR 为多个较小的改动',
+                '- 或手动进行代码审查',
+                '',
+                '---',
+                '🤖 GitHub Actions 自动通知'
+              ].join('\n')
+            });
 
       # 注意：Claude Code Action 会自动发布评论到 PR
       # 不需要额外的步骤来创建评论

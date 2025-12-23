@@ -37,6 +37,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Claude 回复 Issue 评论
+        id: claude_chat
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
@@ -86,3 +87,35 @@ jobs:
             - Bash 执行命令（包括 gh 命令管理 issues、PR、标签等）
 
           claude_args: "--max-turns 15 --allowed-tools Read,Grep,Glob,Bash"
+
+      - name: 处理执行失败
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issueNumber = context.payload.issue.number;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                '❌ **AI 回复失败**',
+                '',
+                '抱歉，处理您的评论时遇到了问题。',
+                '',
+                '**可能的原因**：',
+                '- AI 执行超时（超过 15 轮对话）',
+                '- API 调用失败',
+                '- 权限不足',
+                '',
+                '**建议**：',
+                '- 请查看 [Actions 运行日志](' + context.payload.repository.html_url + '/actions/runs/' + context.runId + ') 了解详情',
+                '- 如果问题持续，请简化您的请求或分步提问',
+                '- 对于复杂问题，建议使用明确的指令（如 `/confirm-fix`）',
+                '',
+                '---',
+                '🤖 GitHub Actions 自动通知'
+              ].join('\n')
+            });

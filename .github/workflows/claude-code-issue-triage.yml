@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Claude 自动分诊
+        id: triage_issue
         uses: anthropics/claude-code-action@v1
         env:
           # 支持自定义 Anthropic API Base URL
@@ -43,6 +44,37 @@ jobs:
             注意：你只能**建议**标签，不能直接添加标签。
 
           claude_args: "--max-turns 3"
+
+      - name: 处理分诊失败
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issueNumber = context.payload.issue.number;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                '❌ **Issue 自动分诊失败**',
+                '',
+                '抱歉，分析此 issue 时遇到了问题。',
+                '',
+                '**可能的原因**：',
+                '- Issue 内容过于复杂或格式异常',
+                '- API 调用失败',
+                '- 权限不足',
+                '',
+                '**建议**：',
+                '- 请查看 [Actions 运行日志](' + context.payload.repository.html_url + '/actions/runs/' + context.runId + ') 了解详情',
+                '- 人工添加合适的标签',
+                '',
+                '---',
+                '🤖 GitHub Actions 自动通知'
+              ].join('\n')
+            });
 
       # 如果需要自动打标签，可以添加后续步骤解析 Claude 的输出
       # 但这需要额外的脚本逻辑，这里暂时只让 Claude 建议
