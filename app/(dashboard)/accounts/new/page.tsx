@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -124,12 +125,15 @@ export default function NewAccountPage() {
             {/* 账号信息预览 */}
             <div className="mb-6 p-4 bg-muted/50 rounded-lg">
               <div className="flex items-center gap-4">
-                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
                   {accountPreview.avatar ? (
-                    <img
+                    <Image
                       src={accountPreview.avatar}
                       alt={accountPreview.nickname}
+                      width={64}
+                      height={64}
                       className="h-16 w-16 rounded-full object-cover"
+                      unoptimized
                     />
                   ) : (
                     <User className="h-8 w-8 text-primary" />

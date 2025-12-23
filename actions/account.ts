@@ -12,6 +12,7 @@ import type { Order, OrderListItem, ChipsOrderItem } from '@/types/order'
 import type { User } from '@/types/user'
 import { getCurrentUserId } from '@/lib/auth/session'
 import { deductBalance } from '@/lib/billing/service'
+import { AppError, ERROR_CODES, handleActionError, logError } from '@/lib/utils/error-handling'
 
 import type { AccountStatusDetail } from '@/types/account'
 
@@ -134,7 +135,7 @@ async function checkUserQuota(): Promise<{
 }> {
   const currentUserId = await getCurrentUserId()
   if (!currentUserId) {
-    return { success: false, error: '请先登录' }
+    return { success: false, error: ERROR_CODES.AUTH_NOT_LOGGED_IN }
   }
 
   const db = await getDb()
@@ -201,54 +202,19 @@ export async function createAccount(input: CreateAccountInput): Promise<{ succes
   try {
     const { name, cookie, dailyBudget = 5000, defaultBidAmount = 30, thresholds } = input
 
-    // 获取当前用户
-    const currentUserId = await getCurrentUserId()
-    if (!currentUserId) {
-      return { success: false, error: '请先登录' }
+    // 检查用户登录和配额
+    const quotaCheck = await checkUserQuota()
+    if (!quotaCheck.success) {
+      return { success: false, error: quotaCheck.error }
     }
+    const { userId: currentUserId, db } = quotaCheck
 
-    const db = await getDb()
-
-    // 获取用户信息检查账号数量限制
-    const user = await db.collection<User>(COLLECTIONS.USERS).findOne({
-      _id: new ObjectId(currentUserId)
-    })
-
-    if (!user) {
-      return { success: false, error: '用户不存在' }
+    // 验证 Cookie 并检查重复
+    const cookieCheck = await validateCookieAndCheckDuplicate(cookie, db)
+    if (!cookieCheck.success) {
+      return { success: false, error: cookieCheck.error }
     }
-
-    // 检查是否超出免费额度
-    if (user.currentAccounts >= user.maxAccounts) {
-      // 需要扣费
-      const deductResult = await deductBalance(currentUserId, 'account_add', {
-        relatedType: 'account',
-        description: '添加账号(超额)',
-      })
-
-      if (!deductResult.success) {
-        return {
-          success: false,
-          error: `账号数量已达上限(${user.maxAccounts}个)，${deductResult.error}`
-        }
-      }
-    }
-
-    // 验证 Cookie 有效性
-    const cookieInfo = await validateCookie(cookie)
-    if (!cookieInfo.valid) {
-      return { success: false, error: cookieInfo.errorMessage || 'Cookie 无效或已过期' }
-    }
-
-    // 检查是否已存在（通过 userId 去重）
-    if (cookieInfo.userId) {
-      const existing = await db
-        .collection(COLLECTIONS.ACCOUNTS)
-        .findOne({ visitorUserId: cookieInfo.userId })
-      if (existing) {
-        return { success: false, error: '该账号已存在' }
-      }
-    }
+    const { cookieInfo } = cookieCheck
 
     // 使用提供的名称，或者从 Cookie 获取的昵称
     const accountName = name?.trim() || cookieInfo.nickname || '未命名账号'
@@ -297,8 +263,8 @@ export async function createAccount(input: CreateAccountInput): Promise<{ succes
     revalidatePath('/accounts')
     return { success: true, id: result.insertedId.toString() }
   } catch (error) {
-    console.error('创建账号失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    logError(error, '创建账号')
+    return handleActionError(error)
   }
 }
 
@@ -344,8 +310,8 @@ export async function updateAccountCookie(
     revalidatePath(`/accounts/${id}`)
     return { success: true }
   } catch (error) {
-    console.error('更新 Cookie 失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    logError(error, '更新 Cookie')
+    return handleActionError(error)
   }
 }
 
@@ -403,8 +369,8 @@ export async function updateAccountByPassword(
     revalidatePath(`/accounts/${id}`)
     return { success: true }
   } catch (error) {
-    console.error('使用账号密码更新登录凭证失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    logError(error, '使用账号密码更新登录凭证')
+    return handleActionError(error)
   }
 }
 
@@ -447,8 +413,8 @@ export async function toggleAutoManage(
     revalidatePath(`/accounts/${id}`)
     return { success: true }
   } catch (error) {
-    console.error('切换自动托管失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    logError(error, '切换自动托管')
+    return handleActionError(error)
   }
 }
 
@@ -475,8 +441,8 @@ export async function toggleAccountPin(
     revalidatePath('/accounts')
     return { success: true }
   } catch (error) {
-    console.error('切换置顶状态失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    logError(error, '切换置顶状态')
+    return handleActionError(error)
   }
 }
 
@@ -503,8 +469,8 @@ export async function updateAccountThresholds(
     revalidatePath(`/accounts/${id}/settings`)
     return { success: true }
   } catch (error) {
-    console.error('更新阈值失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    logError(error, '更新阈值')
+    return handleActionError(error)
   }
 }
 
@@ -532,8 +498,8 @@ export async function updateAccount(
     revalidatePath(`/accounts/${id}`)
     return { success: true }
   } catch (error) {
-    console.error('更新账号失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    logError(error, '更新账号')
+    return handleActionError(error)
   }
 }
 
@@ -558,8 +524,8 @@ export async function deleteAccount(id: string): Promise<{ success: boolean; err
     revalidatePath('/accounts')
     return { success: true }
   } catch (error) {
-    console.error('删除账号失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    logError(error, '删除账号')
+    return handleActionError(error)
   }
 }
 
@@ -676,60 +642,25 @@ export async function createAccountByPassword(
   try {
     const { email, password, dailyBudget = 5000, defaultBidAmount = 30, thresholds } = input
 
-    // 获取当前用户
-    const currentUserId = await getCurrentUserId()
-    if (!currentUserId) {
-      return { success: false, error: '请先登录' }
+    // 检查用户登录和配额
+    const quotaCheck = await checkUserQuota()
+    if (!quotaCheck.success) {
+      return { success: false, error: quotaCheck.error }
     }
-
-    const db = await getDb()
-
-    // 获取用户信息检查账号数量限制
-    const user = await db.collection<User>(COLLECTIONS.USERS).findOne({
-      _id: new ObjectId(currentUserId)
-    })
-
-    if (!user) {
-      return { success: false, error: '用户不存在' }
-    }
-
-    // 检查是否超出免费额度
-    if (user.currentAccounts >= user.maxAccounts) {
-      const deductResult = await deductBalance(currentUserId, 'account_add', {
-        relatedType: 'account',
-        description: '添加账号(超额)',
-      })
-
-      if (!deductResult.success) {
-        return {
-          success: false,
-          error: `账号数量已达上限(${user.maxAccounts}个)，${deductResult.error}`
-        }
-      }
-    }
+    const { userId: currentUserId, db } = quotaCheck
 
     // 登录并验证
     const loginResult = await loginWithEmailPassword(email, password)
-
     if (!loginResult.success || !loginResult.cookie) {
       return { success: false, error: loginResult.error || '登录失败' }
     }
 
-    // 验证 Cookie 有效性
-    const cookieInfo = await validateCookie(loginResult.cookie)
-    if (!cookieInfo.valid) {
-      return { success: false, error: cookieInfo.errorMessage || '登录验证失败' }
+    // 验证 Cookie 并检查重复
+    const cookieCheck = await validateCookieAndCheckDuplicate(loginResult.cookie, db, '登录验证失败')
+    if (!cookieCheck.success) {
+      return { success: false, error: cookieCheck.error }
     }
-
-    // 检查是否已存在
-    if (cookieInfo.userId) {
-      const existing = await db
-        .collection(COLLECTIONS.ACCOUNTS)
-        .findOne({ visitorUserId: cookieInfo.userId })
-      if (existing) {
-        return { success: false, error: '该账号已存在' }
-      }
-    }
+    const { cookieInfo } = cookieCheck
 
     const accountName = cookieInfo.nickname || '未命名账号'
 
@@ -779,8 +710,8 @@ export async function createAccountByPassword(
     revalidatePath('/accounts')
     return { success: true, id: result.insertedId.toString() }
   } catch (error) {
-    console.error('账号密码方式创建账号失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    logError(error, '账号密码方式创建账号')
+    return handleActionError(error)
   }
 }
 
@@ -880,11 +811,9 @@ export async function syncAccountInfo(accountId: string): Promise<SyncAccountInf
       },
     }
   } catch (error) {
-    console.error('同步账号信息失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '同步失败',
-    }
+    logError(error, '同步账号信息')
+    const result = handleActionError(error)
+    return { success: false, error: result.error }
   }
 }
 
@@ -905,10 +834,9 @@ export interface SyncNotesResult {
 
 /**
  * 验证账号是否可以同步
+ * 如果验证失败会抛出 AppError
  */
-async function validateAccountForSync(
-  accountId: string
-): Promise<{ success: false; error: string } | { success: true; account: XhsAccount }> {
+async function validateAccountForSync(accountId: string): Promise<XhsAccount> {
   const db = await getDb()
 
   const account = await db
@@ -916,18 +844,18 @@ async function validateAccountForSync(
     .findOne({ _id: new ObjectId(accountId) })
 
   if (!account) {
-    return { success: false, error: '账号不存在' }
+    throw new AppError(ERROR_CODES.ACCOUNT_NOT_FOUND)
   }
 
   if (!account.cookie) {
-    return { success: false, error: '账号未配置登录凭证' }
+    throw new AppError(ERROR_CODES.ACCOUNT_NO_COOKIE)
   }
 
   if (account.status === 'cookie_expired') {
-    return { success: false, error: 'Cookie 已过期，请重新登录' }
+    throw new AppError(ERROR_CODES.AUTH_COOKIE_EXPIRED)
   }
 
-  return { success: true, account }
+  return account
 }
 
 /**
@@ -1031,48 +959,76 @@ async function fetchAllRemoteNotes(
 }
 
 /**
- * 批量更新或插入笔记到数据库
+ * 批量更新或插入笔记到数据库（优化版：批量查询）
  */
 async function upsertNotesToDB(
   notes: RemoteNote[],
   accountObjId: ObjectId,
   now: Date
 ): Promise<{ inserted: number; updated: number }> {
+  if (notes.length === 0) {
+    return { inserted: 0, updated: 0 }
+  }
+
   const db = await getDb()
   const remoteNotesCollection = db.collection<RemoteNote>(COLLECTIONS.REMOTE_NOTES)
+
+  // 批量查询已存在的笔记
+  const noteIds = notes.map(n => n.noteId)
+  const existingNotes = await remoteNotesCollection
+    .find({
+      accountId: accountObjId,
+      noteId: { $in: noteIds }
+    })
+    .toArray()
+
+  const existingMap = new Map(existingNotes.map(n => [n.noteId, n]))
 
   let updated = 0
   let inserted = 0
 
+  // 准备批量操作
+  const bulkOps: Array<
+    | { updateOne: { filter: { _id: ObjectId }; update: { $set: Record<string, unknown> } } }
+    | { insertOne: { document: RemoteNote } }
+  > = []
+
   for (const note of notes) {
-    const existing = await remoteNotesCollection.findOne({
-      accountId: accountObjId,
-      noteId: note.noteId,
-    })
+    const existing = existingMap.get(note.noteId)
 
     if (existing) {
-      await remoteNotesCollection.updateOne(
-        { _id: existing._id },
-        {
-          $set: {
-            title: note.title,
-            coverImage: note.coverImage,
-            reads: note.reads,
-            likes: note.likes,
-            comments: note.comments,
-            favorites: note.favorites,
-            canHeat: note.canHeat,
-            cantHeatDesc: note.cantHeatDesc,
-            xsecToken: note.xsecToken,
-            syncedAt: now,
+      bulkOps.push({
+        updateOne: {
+          filter: { _id: existing._id },
+          update: {
+            $set: {
+              title: note.title,
+              coverImage: note.coverImage,
+              reads: note.reads,
+              likes: note.likes,
+              comments: note.comments,
+              favorites: note.favorites,
+              canHeat: note.canHeat,
+              cantHeatDesc: note.cantHeatDesc,
+              xsecToken: note.xsecToken,
+              syncedAt: now,
+            },
           },
-        }
-      )
+        },
+      })
       updated++
     } else {
-      await remoteNotesCollection.insertOne(note)
+      bulkOps.push({
+        insertOne: {
+          document: note,
+        },
+      })
       inserted++
     }
+  }
+
+  if (bulkOps.length > 0) {
+    await remoteNotesCollection.bulkWrite(bulkOps)
   }
 
   return { inserted, updated }
@@ -1098,12 +1054,7 @@ async function updateAccountSyncTime(accountId: string, now: Date): Promise<void
  */
 export async function syncRemoteNotes(accountId: string): Promise<SyncNotesResult> {
   try {
-    const validation = await validateAccountForSync(accountId)
-    if (!validation.success) {
-      return { success: false, error: validation.error }
-    }
-
-    const { account } = validation
+    const account = await validateAccountForSync(accountId)
     const accountObjId = new ObjectId(accountId)
     const now = new Date()
 
@@ -1122,11 +1073,9 @@ export async function syncRemoteNotes(accountId: string): Promise<SyncNotesResul
       },
     }
   } catch (error) {
-    console.error('同步远程笔记失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '同步笔记失败',
-    }
+    logError(error, '同步远程笔记')
+    const result = handleActionError(error)
+    return { success: false, error: result.error }
   }
 }
 
@@ -1191,11 +1140,9 @@ export async function getSyncedNotes(
       },
     }
   } catch (error) {
-    console.error('获取已同步笔记失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '获取笔记列表失败',
-    }
+    logError(error, '获取已同步笔记')
+    const result = handleActionError(error)
+    return { success: false, error: result.error }
   }
 }
 
@@ -1301,40 +1248,67 @@ function convertOrderToDBFormat(
 }
 
 /**
- * 批量更新或插入订单到数据库
+ * 批量更新或插入订单到数据库（优化版：批量查询）
  */
 async function upsertOrdersToDB(
   orders: ChipsOrderItem[],
   accountObjId: ObjectId,
   now: Date
 ): Promise<{ inserted: number; updated: number }> {
+  if (orders.length === 0) {
+    return { inserted: 0, updated: 0 }
+  }
+
   const db = await getDb()
   const ordersCollection = db.collection<Order>(COLLECTIONS.ORDERS)
+
+  // 批量查询已存在的订单
+  const orderNos = orders.map(o => o.order_no)
+  const existingOrders = await ordersCollection
+    .find({
+      accountId: accountObjId,
+      orderNo: { $in: orderNos }
+    })
+    .toArray()
+
+  const existingMap = new Map(existingOrders.map(o => [o.orderNo, o]))
 
   let updated = 0
   let inserted = 0
 
-  for (const order of orders) {
-    const existing = await ordersCollection.findOne({
-      accountId: accountObjId,
-      orderNo: order.order_no,
-    })
+  // 准备批量操作
+  const bulkOps: Array<
+    | { updateOne: { filter: { _id: ObjectId }; update: { $set: Omit<Order, '_id'> } } }
+    | { insertOne: { document: Order } }
+  > = []
 
+  for (const order of orders) {
+    const existing = existingMap.get(order.order_no)
     const orderDoc = convertOrderToDBFormat(order, accountObjId, now)
 
     if (existing) {
-      await ordersCollection.updateOne(
-        { _id: existing._id },
-        { $set: orderDoc }
-      )
+      bulkOps.push({
+        updateOne: {
+          filter: { _id: existing._id },
+          update: { $set: orderDoc }
+        }
+      })
       updated++
     } else {
-      await ordersCollection.insertOne({
-        _id: new ObjectId(),
-        ...orderDoc,
-      } as Order)
+      bulkOps.push({
+        insertOne: {
+          document: {
+            _id: new ObjectId(),
+            ...orderDoc,
+          } as Order
+        }
+      })
       inserted++
     }
+  }
+
+  if (bulkOps.length > 0) {
+    await ordersCollection.bulkWrite(bulkOps)
   }
 
   return { inserted, updated }
@@ -1349,12 +1323,7 @@ async function upsertOrdersToDB(
  */
 export async function syncOrders(accountId: string): Promise<SyncOrdersResult> {
   try {
-    const validation = await validateAccountForSync(accountId)
-    if (!validation.success) {
-      return { success: false, error: validation.error }
-    }
-
-    const { account } = validation
+    const account = await validateAccountForSync(accountId)
     const accountObjId = new ObjectId(accountId)
     const now = new Date()
 
@@ -1372,11 +1341,9 @@ export async function syncOrders(accountId: string): Promise<SyncOrdersResult> {
       },
     }
   } catch (error) {
-    console.error('同步订单失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '同步订单失败',
-    }
+    logError(error, '同步订单')
+    const result = handleActionError(error)
+    return { success: false, error: result.error }
   }
 }
 
@@ -1451,11 +1418,9 @@ export async function getSyncedOrders(
       },
     }
   } catch (error) {
-    console.error('获取已同步订单失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '获取订单列表失败',
-    }
+    logError(error, '获取已同步订单')
+    const result = handleActionError(error)
+    return { success: false, error: result.error }
   }
 }
 
@@ -1486,11 +1451,9 @@ export async function getLoginQRCode(): Promise<GetQRCodeResult> {
       qrCodeId: result.qrCodeId,
     }
   } catch (error) {
-    console.error('获取登录二维码失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '获取二维码失败',
-    }
+    logError(error, '获取登录二维码')
+    const result = handleActionError(error)
+    return { success: false, error: result.error }
   }
 }
 
@@ -1530,7 +1493,7 @@ export async function checkLoginQRCodeStatus(qrCodeId: string): Promise<CheckQRC
       status: result.status,
     }
   } catch (error) {
-    console.error('检查二维码状态失败:', error)
+    logError(error, '检查二维码状态')
     return {
       success: false,
       error: error instanceof Error ? error.message : '检查状态失败',
@@ -1546,52 +1509,19 @@ export async function createAccountByQRCode(
   cookie: string
 ): Promise<{ success: boolean; error?: string; id?: string }> {
   try {
-    const currentUserId = await getCurrentUserId()
-    if (!currentUserId) {
-      return { success: false, error: '请先登录' }
+    // 检查用户登录和配额
+    const quotaCheck = await checkUserQuota()
+    if (!quotaCheck.success) {
+      return { success: false, error: quotaCheck.error }
     }
+    const { userId: currentUserId, db } = quotaCheck
 
-    const db = await getDb()
-
-    // 检查用户配额
-    const user = await db
-      .collection<User>(COLLECTIONS.USERS)
-      .findOne({ _id: new ObjectId(currentUserId) })
-
-    if (!user) {
-      return { success: false, error: '用户不存在' }
+    // 验证 Cookie 并检查重复
+    const cookieCheck = await validateCookieAndCheckDuplicate(cookie, db, '登录验证失败')
+    if (!cookieCheck.success) {
+      return { success: false, error: cookieCheck.error }
     }
-
-    // 检查是否超出免费额度
-    if (user.currentAccounts >= user.maxAccounts) {
-      const deductResult = await deductBalance(currentUserId, 'account_add', {
-        relatedType: 'account',
-        description: '添加账号(超额)',
-      })
-
-      if (!deductResult.success) {
-        return {
-          success: false,
-          error: `账号数量已达上限(${user.maxAccounts}个)，${deductResult.error}`
-        }
-      }
-    }
-
-    // 验证 Cookie 有效性
-    const cookieInfo = await validateCookie(cookie)
-    if (!cookieInfo.valid) {
-      return { success: false, error: cookieInfo.errorMessage || '登录验证失败' }
-    }
-
-    // 检查是否已存在
-    if (cookieInfo.userId) {
-      const existing = await db
-        .collection(COLLECTIONS.ACCOUNTS)
-        .findOne({ visitorUserId: cookieInfo.userId })
-      if (existing) {
-        return { success: false, error: '该账号已存在' }
-      }
-    }
+    const { cookieInfo } = cookieCheck
 
     const accountName = cookieInfo.nickname || '未命名账号'
 
@@ -1642,7 +1572,7 @@ export async function createAccountByQRCode(
     revalidatePath('/accounts')
     return { success: true, id: result.insertedId.toString() }
   } catch (error) {
-    console.error('扫码方式创建账号失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    logError(error, '扫码方式创建账号')
+    return handleActionError(error)
   }
 }

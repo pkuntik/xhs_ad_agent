@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -503,10 +504,12 @@ export function ImageGenerator({
       {/* 已有图片时先显示图片 */}
       {imageUrl && compact && (
         <div className="relative aspect-[3/4] bg-gray-100 rounded-lg overflow-hidden group">
-          <img
+          <Image
             src={imageUrl}
             alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
-            className="w-full h-full object-contain"
+            fill
+            className="object-contain"
+            unoptimized
           />
           {/* 上传进度指示器 */}
           {isUploading && (
@@ -626,11 +629,13 @@ export function ImageGenerator({
                 上传参考图（可选）
               </p>
               {referenceImagePreview ? (
-                <div className="relative">
-                  <img
+                <div className="relative h-20">
+                  <Image
                     src={referenceImagePreview}
                     alt="参考图"
-                    className="w-full h-20 object-cover rounded border"
+                    fill
+                    className="object-cover rounded border"
+                    unoptimized
                   />
                   <button
                     onClick={clearReferenceImage}
@@ -706,11 +711,14 @@ export function ImageGenerator({
       {imageUrl && !compact && (
         <Card>
           <CardContent className="p-4">
-            <div className="relative group">
-              <img
+            <div className="relative group aspect-auto min-h-[200px]">
+              <Image
                 src={imageUrl}
                 alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
+                width={400}
+                height={533}
                 className="w-full h-auto rounded-lg"
+                unoptimized
               />
               {/* 上传进度指示器 */}
               {isUploading && (
@@ -766,12 +774,16 @@ export function ImageGenerator({
           >
             <X className="h-6 w-6" />
           </button>
-          <img
-            src={imageUrl}
-            alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
-            className="max-w-full max-h-full object-contain rounded-lg"
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div className="relative max-w-full max-h-full" onClick={(e) => e.stopPropagation()}>
+            <Image
+              src={imageUrl}
+              alt={imageType === 'cover' ? 'AI 生成的封面图' : 'AI 生成的配图'}
+              width={800}
+              height={1067}
+              className="max-w-full max-h-[90vh] object-contain rounded-lg"
+              unoptimized
+            />
+          </div>
         </div>
       )}
 
