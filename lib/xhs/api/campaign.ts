@@ -115,7 +115,8 @@ export interface ChipsOrderDetail {
   note_id: string
   actual_pay: number  // 实际支付（分）
   idx: number
-  error_msg?: string
+  msg?: string        // API 返回的错误信息（如 "笔记仅自己可见"）
+  error_msg?: string  // 兼容字段
 }
 
 // 批量创建订单响应
@@ -365,7 +366,7 @@ export async function createChipsOrder(params: {
   return {
     success: false,
     noteId: order.noteId,
-    error: detail?.error_msg || '创建订单失败',
+    error: detail?.msg || detail?.error_msg || '创建订单失败',
   }
 }
 
