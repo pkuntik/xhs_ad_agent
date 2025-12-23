@@ -1429,6 +1429,23 @@ async function processOnePublication(
     })
 
     if (!chipsResult.success) {
+      // 记录失败任务到数据库，便于追踪
+      await db.collection(COLLECTIONS.TASKS).insertOne({
+        type: 'create_campaign',
+        accountId: new ObjectId(publication.accountId!),
+        workId: work._id,
+        publicationIndex,
+        status: 'failed',
+        priority: 1,
+        scheduledAt: new Date(),
+        startedAt: new Date(),
+        completedAt: new Date(),
+        error: chipsResult.error || '创建订单失败',
+        retryCount: 0,
+        maxRetries: 0,
+        createdAt: new Date(),
+      })
+
       return {
         workId,
         publicationIndex,
@@ -1501,5 +1518,212 @@ async function processOnePublication(
       action: 'error',
       error: error instanceof Error ? error.message : '未知错误',
     }
+  }
+}
+
+// ============================================
+// 投放数据查询
+// ============================================
+
+/**
+ * 获取 Publication 的投放日志
+ */
+export async function getPublicationDeliveryLogs(
+  workId: string,
+  publicationIndex: number,
+  limit = 10
+): Promise<{
+  success: boolean
+  logs?: Array<{
+    _id: string
+    periodStart: string
+    periodEnd: string
+    spent: number
+    impressions: number
+    clicks: number
+    leads: number
+    followers?: number
+    hasFollower?: boolean
+    checkStage?: number
+    isEffective: boolean
+    decision: DeliveryDecision
+    decisionReason: string
+    createdAt: string
+  }>
+  error?: string
+}> {
+  try {
+    const db = await getDb()
+
+    // 使用 $or 来兼容旧数据（没有 publicationIndex 字段的）
+    const logs = await db
+      .collection<DeliveryLog>(COLLECTIONS.DELIVERY_LOGS)
+      .find({
+        workId: new ObjectId(workId),
+        $or: [
+          { publicationIndex },
+          { publicationIndex: { $exists: false } },
+        ],
+      })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .toArray()
+
+    return {
+      success: true,
+      logs: logs.map((log) => ({
+        _id: log._id.toString(),
+        periodStart: log.periodStart.toISOString(),
+        periodEnd: log.periodEnd.toISOString(),
+        spent: log.spent,
+        impressions: log.impressions,
+        clicks: log.clicks,
+        leads: log.leads,
+        followers: log.followers,
+        hasFollower: log.hasFollower,
+        checkStage: log.checkStage,
+        isEffective: log.isEffective,
+        decision: log.decision,
+        decisionReason: log.decisionReason,
+        createdAt: log.createdAt.toISOString(),
+      })),
+    }
+  } catch (error) {
+    console.error('获取投放日志失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
+ * 获取 Publication 相关的订单
+ */
+export async function getPublicationOrders(
+  workId: string,
+  publicationIndex: number
+): Promise<{
+  success: boolean
+  orders?: Array<{
+    _id: string
+    orderNo: string
+    status: string
+    budget: number
+    spent: number
+    impressions: number
+    leads: number
+    createdAt: string
+    startedAt?: string
+    endedAt?: string
+  }>
+  error?: string
+}> {
+  try {
+    const db = await getDb()
+
+    // 通过 workId 查找相关的 campaigns
+    // 使用 $or 来兼容旧数据（没有 publicationIndex 字段的）
+    const campaigns = await db
+      .collection<Campaign>(COLLECTIONS.CAMPAIGNS)
+      .find({
+        workId: new ObjectId(workId),
+        $or: [
+          { publicationIndex },
+          { publicationIndex: { $exists: false } },
+          { publicationIndex: null },
+        ],
+      })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .toArray()
+
+    const orders = campaigns.map((campaign) => ({
+      _id: campaign._id.toString(),
+      orderNo: campaign.orderNo || campaign.campaignId || '未知',
+      status: campaign.status,
+      budget: campaign.budget || 0,
+      spent: 0, // 实际消耗需从 delivery_logs 聚合
+      impressions: 0,
+      leads: 0,
+      createdAt: campaign.createdAt.toISOString(),
+      startedAt: campaign.batchStartAt?.toISOString(),
+      endedAt: campaign.status === 'completed' || campaign.status === 'failed'
+        ? campaign.updatedAt.toISOString()
+        : undefined,
+    }))
+
+    return { success: true, orders }
+  } catch (error) {
+    console.error('获取订单列表失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+  }
+}
+
+/**
+ * 获取 Publication 相关的任务运行日志
+ */
+export async function getPublicationTaskLogs(
+  workId: string,
+  publicationIndex: number,
+  limit = 15
+): Promise<{
+  success: boolean
+  tasks?: Array<{
+    _id: string
+    type: string
+    status: string
+    scheduledAt: string
+    startedAt?: string
+    completedAt?: string
+    result?: Record<string, unknown>
+    error?: string
+  }>
+  error?: string
+}> {
+  try {
+    const db = await getDb()
+
+    // 查找相关的任务记录
+    // 使用 $or 来兼容旧数据（没有 publicationIndex 字段的）
+    const tasks = await db
+      .collection<{
+        _id: ObjectId
+        type: string
+        status: string
+        workId?: ObjectId
+        publicationIndex?: number | null
+        scheduledAt: Date
+        startedAt?: Date
+        completedAt?: Date
+        result?: Record<string, unknown>
+        error?: string
+      }>(COLLECTIONS.TASKS)
+      .find({
+        workId: new ObjectId(workId),
+        $or: [
+          { publicationIndex },
+          { publicationIndex: { $exists: false } },
+          { publicationIndex: null },
+        ],
+        type: { $in: ['check_managed_campaign', 'create_campaign', 'pause_campaign', 'restart_campaign'] },
+      })
+      .sort({ scheduledAt: -1 })
+      .limit(limit)
+      .toArray()
+
+    return {
+      success: true,
+      tasks: tasks.map((task) => ({
+        _id: task._id.toString(),
+        type: task.type,
+        status: task.status,
+        scheduledAt: task.scheduledAt.toISOString(),
+        startedAt: task.startedAt?.toISOString(),
+        completedAt: task.completedAt?.toISOString(),
+        result: task.result,
+        error: task.error,
+      })),
+    }
+  } catch (error) {
+    console.error('获取任务日志失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '未知错误' }
   }
 }

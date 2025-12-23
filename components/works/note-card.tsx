@@ -44,6 +44,9 @@ import { markFollowerAdded } from '@/actions/delivery'
 import { SyncLogDialog } from '@/components/works/sync-log-dialog'
 import { DeliveryConfigDialog } from '@/components/works/delivery-config-dialog'
 import { DeliveryStopDialog } from '@/components/works/delivery-stop-dialog'
+import { DeliveryLogsSection } from '@/components/works/delivery-logs-section'
+import { OrdersSection } from '@/components/works/orders-section'
+import { TaskLogsSection } from '@/components/works/task-logs-section'
 import type { Publication } from '@/types/work'
 
 interface NoteCardProps {
@@ -550,7 +553,43 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
               </div>
             </div>
           )}
+
+          {/* 当前投放配置预览 */}
+          {deliveryConfig && isDeliveryEnabled && (
+            <div className="mt-2 pt-2 border-t border-purple-100 flex flex-wrap gap-2 text-[10px]">
+              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
+                预算: ¥{deliveryConfig.budget}
+              </span>
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                检查1: ¥{deliveryConfig.checkThreshold1}
+              </span>
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                检查2: ¥{deliveryConfig.checkThreshold2}
+              </span>
+              <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded">
+                最少: {deliveryConfig.minAttempts}次
+              </span>
+            </div>
+          )}
         </div>
+
+        {/* 投放日志和订单 */}
+        {(isDeliveryEnabled || (deliveryStats && deliveryStats.totalAttempts > 0)) && (
+          <div className="bg-gradient-to-r from-purple-50/30 to-blue-50/30">
+            <TaskLogsSection
+              workId={workId}
+              publicationIndex={index}
+            />
+            <DeliveryLogsSection
+              workId={workId}
+              publicationIndex={index}
+            />
+            <OrdersSection
+              workId={workId}
+              publicationIndex={index}
+            />
+          </div>
+        )}
 
         {error && (
           <div className="border-t px-4 py-2 bg-red-50">
