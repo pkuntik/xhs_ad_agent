@@ -65,7 +65,7 @@ jobs:
 
             ⚠️ **重要**：此阶段只提出方案，不要实际修复代码。
 
-          claude_args: "--max-turns 5 --allowed-tools Read,Grep,Glob,Bash"
+          claude_args: "--max-turns 50 --allowed-tools Read,Grep,Glob,Bash"
 
   # 第二阶段：执行修复
   execute-fix:
@@ -130,7 +130,7 @@ jobs:
             🤖 由 Claude Code 自动修复
             ```
 
-          claude_args: "--max-turns 10 --allowed-tools Read,Grep,Glob,Bash,Edit,Write"
+          claude_args: "--allowed-tools Read,Grep,Glob,Bash,Edit,Write,TodoWrite"
 
       - name: 推送分支
         run: |
