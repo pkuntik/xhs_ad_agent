@@ -303,8 +303,8 @@ export async function syncNoteData(
       authorNickname: detail.baseInfo.author.nickname,
       authorUserId: detail.baseInfo.author.userId,
       authorAvatar: detail.baseInfo.author.userSImage,
-      coverImage: detail.baseInfo.images[0]?.link,
-      images: detail.baseInfo.images.map(img => img.link),
+      coverImage: detail.baseInfo.images?.[0]?.link,
+      images: detail.baseInfo.images?.map(img => img.link) || [],
       createDate: detail.baseInfo.createDate,
       noteType: detail.baseInfo.noteType,
     }

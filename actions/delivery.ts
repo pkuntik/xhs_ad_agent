@@ -511,7 +511,7 @@ export async function resumeDelivery(
 // 托管投放相关功能
 // ============================================
 
-import type { DeliveryConfig, DeliveryStats, DeliveryStatus } from '@/types/work'
+import type { DeliveryConfig, DeliveryStats, DeliveryStatus, Publication } from '@/types/work'
 
 // 默认托管配置
 const DEFAULT_DELIVERY_CONFIG: DeliveryConfig = {
@@ -812,28 +812,60 @@ export async function markFollowerAdded(
   }
 }
 
+// ============================================
+// checkManagedCampaign 辅助函数
+// ============================================
+
+/** 检查参数配置 */
+interface CheckParams {
+  checkThreshold1: number
+  checkThreshold2: number
+  minAttempts: number
+  minSuccessRate: number
+}
+
+/** 投放数据上下文 */
+interface CampaignContext {
+  db: Db
+  campaign: Campaign
+  work: Work
+  publication: Publication
+  account: XhsAccount
+  stats: DeliveryStats
+}
+
+/** 报表数据 */
+interface ReportData {
+  spent: number
+  impressions: number
+  clicks: number
+  ctr: number
+  leads: number
+  costPerLead: number
+}
+
 /**
- * 检查托管投放效果（两阶段检查）
- *
- * 阶段1（消耗 >= threshold1）：检查是否有私信咨询
- * 阶段2（消耗 >= threshold2）：检查是否有企微加粉
- *
- * 如果两个阶段都没有效果，终止当前投放并重新创建
+ * 解析检查参数
  */
-export async function checkManagedCampaign(
+function parseCheckParams(params: Record<string, unknown>): CheckParams {
+  return {
+    checkThreshold1: (params.checkThreshold1 as number) || 60,
+    checkThreshold2: (params.checkThreshold2 as number) || 120,
+    minAttempts: (params.minAttempts as number) || 3,
+    minSuccessRate: (params.minSuccessRate as number) || 30,
+  }
+}
+
+/**
+ * 获取投放相关数据
+ */
+async function fetchCampaignData(
   campaignId: string,
   workId: string,
-  publicationIndex: number,
-  params: Record<string, unknown>
-): Promise<{ decision: DeliveryDecision; reason: string }> {
+  publicationIndex: number
+): Promise<CampaignContext> {
   const db = await getDb()
 
-  const checkThreshold1 = (params.checkThreshold1 as number) || 60
-  const checkThreshold2 = (params.checkThreshold2 as number) || 120
-  const minAttempts = (params.minAttempts as number) || 3
-  const minSuccessRate = (params.minSuccessRate as number) || 30
-
-  // 获取计划信息
   const campaign = await db
     .collection<Campaign>(COLLECTIONS.CAMPAIGNS)
     .findOne({ _id: new ObjectId(campaignId) })
@@ -841,7 +873,6 @@ export async function checkManagedCampaign(
     throw new Error('计划不存在')
   }
 
-  // 获取作品和 Publication 信息
   const work = await db
     .collection<Work>(COLLECTIONS.WORKS)
     .findOne({ _id: new ObjectId(workId) })
@@ -853,14 +884,7 @@ export async function checkManagedCampaign(
   }
 
   const publication = work.publications[publicationIndex]
-  const stats = publication.deliveryStats || INITIAL_DELIVERY_STATS
 
-  // 检查托管状态
-  if (publication.deliveryStatus !== 'running') {
-    return { decision: 'pause', reason: '托管投放已关闭' }
-  }
-
-  // 获取账号信息
   if (!publication.accountId) {
     throw new Error('笔记未关联账号')
   }
@@ -875,8 +899,19 @@ export async function checkManagedCampaign(
     throw new Error('账号未完成配置')
   }
 
-  // 获取投放数据报表
-  let reportData = {
+  const stats = publication.deliveryStats || INITIAL_DELIVERY_STATS
+
+  return { db, campaign, work, publication, account, stats }
+}
+
+/**
+ * 获取投放报表数据
+ */
+async function fetchReportData(
+  account: XhsAccount,
+  campaign: Campaign
+): Promise<ReportData> {
+  const defaultData: ReportData = {
     spent: 0,
     impressions: 0,
     clicks: 0,
@@ -886,24 +921,34 @@ export async function checkManagedCampaign(
   }
 
   try {
-    reportData = await reportApi.getReportData({
-      cookie: account.cookie,
-      advertiserId: account.advertiserId,
+    return await reportApi.getReportData({
+      cookie: account.cookie!,
+      advertiserId: account.advertiserId!,
       campaignId: campaign.campaignId,
       startDate: campaign.batchStartAt,
       endDate: new Date(),
     })
-  } catch (apiError) {
+  } catch {
     console.warn('报表 API 未实现，使用模拟数据')
+    return defaultData
   }
+}
 
-  // 创建日志基础数据
-  const logEntry: Omit<DeliveryLog, '_id'> = {
-    accountId: new ObjectId(publication.accountId),
+/**
+ * 创建检查日志条目
+ */
+function createCheckLogEntry(
+  ctx: CampaignContext,
+  reportData: ReportData,
+  workId: string,
+  publicationIndex: number
+): Omit<DeliveryLog, '_id'> {
+  return {
+    accountId: new ObjectId(ctx.publication.accountId!),
     workId: new ObjectId(workId),
-    campaignId: campaign._id,
+    campaignId: ctx.campaign._id,
     publicationIndex,
-    periodStart: campaign.batchStartAt,
+    periodStart: ctx.campaign.batchStartAt,
     periodEnd: new Date(),
     spent: reportData.spent,
     impressions: reportData.impressions,
@@ -917,158 +962,267 @@ export async function checkManagedCampaign(
     decisionReason: '',
     createdAt: new Date(),
   }
+}
 
-  // 阶段判断
-  let checkStage: 1 | 2 = 1
-  if (reportData.spent >= checkThreshold2) {
-    checkStage = 2
-  } else if (reportData.spent >= checkThreshold1) {
-    checkStage = 1
-  } else {
-    // 消耗未达到阈值，继续监控
+/**
+ * 处理阶段1检查：是否有咨询
+ */
+async function handleStage1Check(
+  ctx: CampaignContext,
+  reportData: ReportData,
+  logEntry: Omit<DeliveryLog, '_id'>,
+  campaignId: string,
+  workId: string,
+  publicationIndex: number,
+  params: Record<string, unknown>
+): Promise<{ decision: DeliveryDecision; reason: string } | null> {
+  logEntry.checkStage = 1
+
+  if (reportData.leads > 0) {
+    logEntry.isEffective = true
     logEntry.decision = 'continue'
-    logEntry.decisionReason = '消耗未达到检查阈值，继续监控'
-    logEntry.checkStage = 1
+    logEntry.decisionReason = `阶段1有效：${reportData.leads}个咨询`
 
-    await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
-    await scheduleManagedCheck(db, campaignId, workId, publicationIndex, params, 30)
+    await ctx.db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
+    await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, 60)
 
-    return { decision: 'continue', reason: '消耗未达到检查阈值' }
+    return { decision: 'continue', reason: '阶段1：有咨询，继续投放' }
   }
 
-  logEntry.checkStage = checkStage
+  logEntry.decision = 'continue'
+  logEntry.decisionReason = '阶段1无咨询，等待阶段2检查'
 
-  // 阶段1检查：是否有咨询
-  if (checkStage === 1) {
-    if (reportData.leads > 0) {
-      // 有咨询，效果达标
-      logEntry.isEffective = true
-      logEntry.decision = 'continue'
-      logEntry.decisionReason = `阶段1有效：${reportData.leads}个咨询`
+  await ctx.db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
+  await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, 30)
 
-      await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
-      await scheduleManagedCheck(db, campaignId, workId, publicationIndex, params, 60)
+  return { decision: 'continue', reason: '阶段1：无咨询，等待阶段2' }
+}
 
-      return { decision: 'continue', reason: '阶段1：有咨询，继续投放' }
-    }
+/**
+ * 处理阶段2检查：是否有加粉或咨询
+ */
+async function handleStage2Check(
+  ctx: CampaignContext,
+  reportData: ReportData,
+  logEntry: Omit<DeliveryLog, '_id'>,
+  campaignId: string,
+  workId: string,
+  publicationIndex: number,
+  params: Record<string, unknown>,
+  checkParams: CheckParams
+): Promise<{ decision: DeliveryDecision; reason: string }> {
+  logEntry.checkStage = 2
 
-    // 无咨询，继续到阶段2检查
-    logEntry.decision = 'continue'
-    logEntry.decisionReason = '阶段1无咨询，等待阶段2检查'
-
-    await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
-    await scheduleManagedCheck(db, campaignId, workId, publicationIndex, params, 30)
-
-    return { decision: 'continue', reason: '阶段1：无咨询，等待阶段2' }
-  }
-
-  // 阶段2检查：是否有加粉
   // 查询最近的加粉记录
-  const recentFollowerLog = await db
+  const recentFollowerLog = await ctx.db
     .collection<DeliveryLog>(COLLECTIONS.DELIVERY_LOGS)
     .findOne({
       workId: new ObjectId(workId),
       publicationIndex,
       hasFollower: true,
-      createdAt: { $gte: campaign.batchStartAt },
+      createdAt: { $gte: ctx.campaign.batchStartAt },
     })
 
   const hasFollower = !!recentFollowerLog
   logEntry.hasFollower = hasFollower
 
   if (hasFollower || reportData.leads > 0) {
-    // 有加粉或有咨询，本次投放成功
-    logEntry.isEffective = true
-    logEntry.decision = 'continue'
-    logEntry.decisionReason = hasFollower
-      ? `阶段2有效：有企微加粉`
-      : `阶段2有效：${reportData.leads}个咨询`
-
-    await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
-
-    // 更新统计
-    await updateDeliveryStats(db, workId, publicationIndex, {
-      totalSpent: stats.totalSpent + reportData.spent,
-      successfulAttempts: stats.successfulAttempts + 1,
-    })
-
-    await scheduleManagedCheck(db, campaignId, workId, publicationIndex, params, 60)
-
-    return { decision: 'continue', reason: '阶段2：有效果，继续投放' }
+    return await handleEffectiveStage2(
+      ctx, reportData, logEntry, campaignId, workId, publicationIndex, params, hasFollower
+    )
   }
 
-  // 阶段2无效果，需要判断是否重投
+  return await handleIneffectiveStage2(
+    ctx, reportData, logEntry, workId, publicationIndex, checkParams
+  )
+}
+
+/**
+ * 处理阶段2有效果的情况
+ */
+async function handleEffectiveStage2(
+  ctx: CampaignContext,
+  reportData: ReportData,
+  logEntry: Omit<DeliveryLog, '_id'>,
+  campaignId: string,
+  workId: string,
+  publicationIndex: number,
+  params: Record<string, unknown>,
+  hasFollower: boolean
+): Promise<{ decision: DeliveryDecision; reason: string }> {
+  logEntry.isEffective = true
+  logEntry.decision = 'continue'
+  logEntry.decisionReason = hasFollower
+    ? `阶段2有效：有企微加粉`
+    : `阶段2有效：${reportData.leads}个咨询`
+
+  await ctx.db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
+
+  await updateDeliveryStats(ctx.db, workId, publicationIndex, {
+    totalSpent: ctx.stats.totalSpent + reportData.spent,
+    successfulAttempts: ctx.stats.successfulAttempts + 1,
+  })
+
+  await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, 60)
+
+  return { decision: 'continue', reason: '阶段2：有效果，继续投放' }
+}
+
+/**
+ * 处理阶段2无效果的情况：暂停计划并决定是否重投
+ */
+async function handleIneffectiveStage2(
+  ctx: CampaignContext,
+  reportData: ReportData,
+  logEntry: Omit<DeliveryLog, '_id'>,
+  workId: string,
+  publicationIndex: number,
+  checkParams: CheckParams
+): Promise<{ decision: DeliveryDecision; reason: string }> {
   logEntry.isEffective = false
   logEntry.decision = 'restart'
   logEntry.decisionReason = '阶段2无效果（无咨询、无加粉），终止并重投'
 
-  await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
+  await ctx.db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
 
   // 暂停当前计划
-  try {
-    if (campaign.orderNo) {
-      await campaignApi.cancelChipsOrder({
-        cookie: account.cookie,
-        orderNo: campaign.orderNo,
-      })
-    } else if (campaign.campaignId) {
-      await campaignApi.pauseCampaign({
-        cookie: account.cookie,
-        campaignId: campaign.campaignId,
-      })
-    }
-  } catch (e) {
-    console.warn('暂停计划 API 调用失败:', e)
-  }
-
-  await db.collection(COLLECTIONS.CAMPAIGNS).updateOne(
-    { _id: campaign._id },
-    { $set: { status: 'paused', updatedAt: new Date() } }
-  )
+  await pauseCurrentCampaign(ctx)
 
   // 更新统计
-  const newTotalAttempts = stats.totalAttempts
+  const newTotalAttempts = ctx.stats.totalAttempts
   const newSuccessRate = newTotalAttempts > 0
-    ? (stats.successfulAttempts / newTotalAttempts) * 100
+    ? (ctx.stats.successfulAttempts / newTotalAttempts) * 100
     : 0
   const newAvgSpent = newTotalAttempts > 0
-    ? (stats.totalSpent + reportData.spent) / newTotalAttempts
+    ? (ctx.stats.totalSpent + reportData.spent) / newTotalAttempts
     : 0
 
-  await updateDeliveryStats(db, workId, publicationIndex, {
-    totalSpent: stats.totalSpent + reportData.spent,
+  await updateDeliveryStats(ctx.db, workId, publicationIndex, {
+    totalSpent: ctx.stats.totalSpent + reportData.spent,
     avgSpentPerAttempt: newAvgSpent,
     successRate: newSuccessRate,
   })
 
   // 判断是否继续重投
   const shouldContinue =
-    stats.totalAttempts < minAttempts ||
-    newSuccessRate >= minSuccessRate
+    ctx.stats.totalAttempts < checkParams.minAttempts ||
+    newSuccessRate >= checkParams.minSuccessRate
 
   if (!shouldContinue) {
-    // 达到最小次数且起量率低，停止托管
-    await db.collection(COLLECTIONS.WORKS).updateOne(
-      { _id: new ObjectId(workId) },
-      {
-        $set: {
-          [`publications.${publicationIndex}.deliveryStatus`]: 'stopped',
-          [`publications.${publicationIndex}.deliveryConfig.enabled`]: false,
-          updatedAt: new Date(),
-        },
-      }
-    )
-
-    return {
-      decision: 'pause',
-      reason: `投放${stats.totalAttempts}次，起量率${newSuccessRate.toFixed(1)}%低于${minSuccessRate}%，停止托管`,
-    }
+    return await stopManagedDeliveryStatus(ctx.db, workId, publicationIndex, ctx.stats.totalAttempts, newSuccessRate, checkParams.minSuccessRate)
   }
 
-  // 创建新的投放计划
   await startManagedDelivery(workId, publicationIndex)
-
   return { decision: 'restart', reason: '效果不佳，已创建新的投放计划' }
+}
+
+/**
+ * 暂停当前投放计划
+ */
+async function pauseCurrentCampaign(ctx: CampaignContext): Promise<void> {
+  try {
+    if (ctx.campaign.orderNo) {
+      await campaignApi.cancelChipsOrder({
+        cookie: ctx.account.cookie!,
+        orderNo: ctx.campaign.orderNo,
+      })
+    } else if (ctx.campaign.campaignId) {
+      await campaignApi.pauseCampaign({
+        cookie: ctx.account.cookie!,
+        campaignId: ctx.campaign.campaignId,
+      })
+    }
+  } catch (e) {
+    console.warn('暂停计划 API 调用失败:', e)
+  }
+
+  await ctx.db.collection(COLLECTIONS.CAMPAIGNS).updateOne(
+    { _id: ctx.campaign._id },
+    { $set: { status: 'paused', updatedAt: new Date() } }
+  )
+}
+
+/**
+ * 停止托管投放状态
+ */
+async function stopManagedDeliveryStatus(
+  db: Db,
+  workId: string,
+  publicationIndex: number,
+  totalAttempts: number,
+  successRate: number,
+  minSuccessRate: number
+): Promise<{ decision: DeliveryDecision; reason: string }> {
+  await db.collection(COLLECTIONS.WORKS).updateOne(
+    { _id: new ObjectId(workId) },
+    {
+      $set: {
+        [`publications.${publicationIndex}.deliveryStatus`]: 'stopped',
+        [`publications.${publicationIndex}.deliveryConfig.enabled`]: false,
+        updatedAt: new Date(),
+      },
+    }
+  )
+
+  return {
+    decision: 'pause',
+    reason: `投放${totalAttempts}次，起量率${successRate.toFixed(1)}%低于${minSuccessRate}%，停止托管`,
+  }
+}
+
+// ============================================
+// 主检查函数
+// ============================================
+
+/**
+ * 检查托管投放效果（两阶段检查）
+ *
+ * 阶段1（消耗 >= threshold1）：检查是否有私信咨询
+ * 阶段2（消耗 >= threshold2）：检查是否有企微加粉
+ *
+ * 如果两个阶段都没有效果，终止当前投放并重新创建
+ */
+export async function checkManagedCampaign(
+  campaignId: string,
+  workId: string,
+  publicationIndex: number,
+  params: Record<string, unknown>
+): Promise<{ decision: DeliveryDecision; reason: string }> {
+  const checkParams = parseCheckParams(params)
+  const ctx = await fetchCampaignData(campaignId, workId, publicationIndex)
+
+  // 检查托管状态
+  if (ctx.publication.deliveryStatus !== 'running') {
+    return { decision: 'pause', reason: '托管投放已关闭' }
+  }
+
+  const reportData = await fetchReportData(ctx.account, ctx.campaign)
+  const logEntry = createCheckLogEntry(ctx, reportData, workId, publicationIndex)
+
+  // 判断检查阶段
+  if (reportData.spent < checkParams.checkThreshold1) {
+    // 消耗未达到阈值，继续监控
+    logEntry.decision = 'continue'
+    logEntry.decisionReason = '消耗未达到检查阈值，继续监控'
+    logEntry.checkStage = 1
+
+    await ctx.db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
+    await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, 30)
+
+    return { decision: 'continue', reason: '消耗未达到检查阈值' }
+  }
+
+  // 阶段1检查
+  if (reportData.spent < checkParams.checkThreshold2) {
+    return (await handleStage1Check(
+      ctx, reportData, logEntry, campaignId, workId, publicationIndex, params
+    ))!
+  }
+
+  // 阶段2检查
+  return await handleStage2Check(
+    ctx, reportData, logEntry, campaignId, workId, publicationIndex, params, checkParams
+  )
 }
 
 /**
