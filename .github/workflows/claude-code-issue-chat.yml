@@ -16,6 +16,7 @@ jobs:
     # 只在 issue 评论时触发，不在 PR 评论时触发，且评论者不是 bot
     # 排除明确的确认指令（由 confirm-fix 工作流处理）
     if: |
+      github.event.issue.state == 'open' &&
       github.event.issue.pull_request == null &&
       github.event.comment.user.type != 'Bot' &&
       github.event.sender.login != 'github-actions[bot]' &&

@@ -826,126 +826,218 @@ export interface SyncNotesResult {
   }
 }
 
+// ============================================
+// syncRemoteNotes 辅助函数
+// ============================================
+
+/**
+ * 验证账号是否可以同步
+ */
+async function validateAccountForSync(
+  accountId: string
+): Promise<{ success: false; error: string } | { success: true; account: XhsAccount }> {
+  const db = await getDb()
+
+  const account = await db
+    .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
+    .findOne({ _id: new ObjectId(accountId) })
+
+  if (!account) {
+    return { success: false, error: '账号不存在' }
+  }
+
+  if (!account.cookie) {
+    return { success: false, error: '账号未配置登录凭证' }
+  }
+
+  if (account.status === 'cookie_expired') {
+    return { success: false, error: 'Cookie 已过期，请重新登录' }
+  }
+
+  return { success: true, account }
+}
+
+/**
+ * 并发控制函数：限制同时执行的 Promise 数量
+ */
+async function pLimit<T>(
+  tasks: (() => Promise<T>)[],
+  concurrency: number
+): Promise<T[]> {
+  const results: T[] = []
+  const executing: Promise<void>[] = []
+
+  for (const task of tasks) {
+    const p = Promise.resolve().then(() => task()).then(result => {
+      results.push(result)
+    })
+    executing.push(p as Promise<void>)
+
+    if (executing.length >= concurrency) {
+      await Promise.race(executing)
+      executing.splice(0, executing.findIndex(e => e === p) + 1)
+    }
+  }
+
+  await Promise.all(executing)
+  return results
+}
+
+/**
+ * 转换远程笔记为数据库格式
+ */
+function convertNoteToDBFormat(
+  note: { note_id: string; note_title?: string; note_image?: string; note_type: number; author_name?: string; create_time: number; read?: number; likes?: number; comments?: number; favorite?: number; can_heat: boolean; cant_heat_desc?: string; xsec_token?: string },
+  accountObjId: ObjectId,
+  now: Date
+): RemoteNote {
+  return {
+    _id: new ObjectId(),
+    accountId: accountObjId,
+    noteId: note.note_id,
+    title: note.note_title || '',
+    coverImage: note.note_image || '',
+    noteType: note.note_type,
+    authorName: note.author_name || '',
+    publishedAt: new Date(note.create_time),
+    reads: note.read || 0,
+    likes: note.likes || 0,
+    comments: note.comments || 0,
+    favorites: note.favorite || 0,
+    canHeat: note.can_heat,
+    cantHeatDesc: note.cant_heat_desc,
+    xsecToken: note.xsec_token || '',
+    syncedAt: now,
+    createdAt: now,
+  }
+}
+
+/**
+ * 从远程获取所有笔记（并发优化版）
+ */
+async function fetchAllRemoteNotes(
+  cookie: string,
+  accountObjId: ObjectId,
+  now: Date
+): Promise<RemoteNote[]> {
+  const pageSize = 20
+  const concurrency = 3
+
+  // 首先获取第一页，得到总数
+  const firstResult = await queryChipsNotes(cookie, { page: 1, pageSize })
+
+  if (firstResult.list.length === 0) {
+    return []
+  }
+
+  const allNotes: RemoteNote[] = firstResult.list.map(note =>
+    convertNoteToDBFormat(note, accountObjId, now)
+  )
+
+  const totalPages = Math.ceil(firstResult.total / pageSize)
+
+  if (totalPages <= 1) {
+    return allNotes
+  }
+
+  // 并发获取剩余页面
+  const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2)
+  const tasks = remainingPages.map(page =>
+    () => queryChipsNotes(cookie, { page, pageSize })
+  )
+
+  const results = await pLimit(tasks, concurrency)
+
+  for (const result of results) {
+    for (const note of result.list) {
+      allNotes.push(convertNoteToDBFormat(note, accountObjId, now))
+    }
+  }
+
+  return allNotes
+}
+
+/**
+ * 批量更新或插入笔记到数据库
+ */
+async function upsertNotesToDB(
+  notes: RemoteNote[],
+  accountObjId: ObjectId,
+  now: Date
+): Promise<{ inserted: number; updated: number }> {
+  const db = await getDb()
+  const remoteNotesCollection = db.collection<RemoteNote>(COLLECTIONS.REMOTE_NOTES)
+
+  let updated = 0
+  let inserted = 0
+
+  for (const note of notes) {
+    const existing = await remoteNotesCollection.findOne({
+      accountId: accountObjId,
+      noteId: note.noteId,
+    })
+
+    if (existing) {
+      await remoteNotesCollection.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            title: note.title,
+            coverImage: note.coverImage,
+            reads: note.reads,
+            likes: note.likes,
+            comments: note.comments,
+            favorites: note.favorites,
+            canHeat: note.canHeat,
+            cantHeatDesc: note.cantHeatDesc,
+            xsecToken: note.xsecToken,
+            syncedAt: now,
+          },
+        }
+      )
+      updated++
+    } else {
+      await remoteNotesCollection.insertOne(note)
+      inserted++
+    }
+  }
+
+  return { inserted, updated }
+}
+
+/**
+ * 更新账号的最后同步时间
+ */
+async function updateAccountSyncTime(accountId: string, now: Date): Promise<void> {
+  const db = await getDb()
+  await db.collection(COLLECTIONS.ACCOUNTS).updateOne(
+    { _id: new ObjectId(accountId) },
+    { $set: { lastSyncAt: now, updatedAt: now } }
+  )
+}
+
+// ============================================
+// 主函数
+// ============================================
+
 /**
  * 同步账号的所有笔记（从聚光平台获取并保存到数据库）
  */
 export async function syncRemoteNotes(accountId: string): Promise<SyncNotesResult> {
   try {
-    const db = await getDb()
-
-    // 获取账号信息（包含 cookie）
-    const account = await db
-      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
-      .findOne({ _id: new ObjectId(accountId) })
-
-    if (!account) {
-      return { success: false, error: '账号不存在' }
+    const validation = await validateAccountForSync(accountId)
+    if (!validation.success) {
+      return { success: false, error: validation.error }
     }
 
-    if (!account.cookie) {
-      return { success: false, error: '账号未配置登录凭证' }
-    }
-
-    if (account.status === 'cookie_expired') {
-      return { success: false, error: 'Cookie 已过期，请重新登录' }
-    }
-
+    const { account } = validation
     const accountObjId = new ObjectId(accountId)
     const now = new Date()
-    let allNotes: RemoteNote[] = []
-    let page = 1
-    const pageSize = 20
-    let hasMore = true
 
-    // 遍历所有分页获取全部笔记
-    while (hasMore) {
-      const result = await queryChipsNotes(account.cookie, {
-        page,
-        pageSize,
-      })
+    const allNotes = await fetchAllRemoteNotes(account.cookie!, accountObjId, now)
+    const { inserted, updated } = await upsertNotesToDB(allNotes, accountObjId, now)
 
-      if (result.list.length === 0) {
-        hasMore = false
-        break
-      }
-
-      // 转换为数据库格式
-      for (const note of result.list) {
-        allNotes.push({
-          _id: new ObjectId(),
-          accountId: accountObjId,
-          noteId: note.note_id,
-          title: note.note_title || '',
-          coverImage: note.note_image || '',
-          noteType: note.note_type,
-          authorName: note.author_name || '',
-          publishedAt: new Date(note.create_time),
-          reads: note.read || 0,
-          likes: note.likes || 0,
-          comments: note.comments || 0,
-          favorites: note.favorite || 0,
-          canHeat: note.can_heat,
-          cantHeatDesc: note.cant_heat_desc,
-          xsecToken: note.xsec_token || '',
-          syncedAt: now,
-          createdAt: now,
-        })
-      }
-
-      // 检查是否还有更多
-      if (page * pageSize >= result.total) {
-        hasMore = false
-      } else {
-        page++
-        // 防止请求过快
-        await new Promise(resolve => setTimeout(resolve, 200))
-      }
-    }
-
-    // 批量更新或插入到数据库
-    let updated = 0
-    let inserted = 0
-    const remoteNotesCollection = db.collection<RemoteNote>(COLLECTIONS.REMOTE_NOTES)
-
-    for (const note of allNotes) {
-      const existing = await remoteNotesCollection.findOne({
-        accountId: accountObjId,
-        noteId: note.noteId,
-      })
-
-      if (existing) {
-        // 更新现有记录
-        await remoteNotesCollection.updateOne(
-          { _id: existing._id },
-          {
-            $set: {
-              title: note.title,
-              coverImage: note.coverImage,
-              reads: note.reads,
-              likes: note.likes,
-              comments: note.comments,
-              favorites: note.favorites,
-              canHeat: note.canHeat,
-              cantHeatDesc: note.cantHeatDesc,
-              xsecToken: note.xsecToken,
-              syncedAt: now,
-            },
-          }
-        )
-        updated++
-      } else {
-        // 插入新记录
-        await remoteNotesCollection.insertOne(note)
-        inserted++
-      }
-    }
-
-    // 更新账号的最后同步时间
-    await db.collection(COLLECTIONS.ACCOUNTS).updateOne(
-      { _id: accountObjId },
-      { $set: { lastSyncAt: now, updatedAt: now } }
-    )
-
+    await updateAccountSyncTime(accountId, now)
     revalidatePath(`/accounts/${accountId}`)
 
     return {
@@ -1045,129 +1137,156 @@ export interface SyncOrdersResult {
   }
 }
 
+// ============================================
+// syncOrders 辅助函数
+// ============================================
+
+/**
+ * 从远程获取所有订单（并发优化版）
+ */
+async function fetchAllRemoteOrders(cookie: string): Promise<ChipsOrderItem[]> {
+  const pageSize = 20
+  const concurrency = 3
+
+  // 首先获取第一页，得到总数
+  const firstResult = await queryChipsOrders(cookie, { page: 1, page_size: pageSize })
+
+  if (firstResult.list.length === 0) {
+    return []
+  }
+
+  const allOrders: ChipsOrderItem[] = [...firstResult.list]
+  const totalPages = Math.ceil(firstResult.total / pageSize)
+
+  if (totalPages <= 1) {
+    return allOrders
+  }
+
+  // 并发获取剩余页面
+  const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2)
+  const tasks = remainingPages.map(page =>
+    () => queryChipsOrders(cookie, { page, page_size: pageSize })
+  )
+
+  const results = await pLimit(tasks, concurrency)
+
+  for (const result of results) {
+    allOrders.push(...result.list)
+  }
+
+  return allOrders
+}
+
+/**
+ * 将远程订单转换为数据库格式
+ */
+function convertOrderToDBFormat(
+  order: ChipsOrderItem,
+  accountObjId: ObjectId,
+  now: Date
+): Omit<Order, '_id'> {
+  return {
+    accountId: accountObjId,
+    orderNo: order.order_no,
+    state: order.state,
+    stateDesc: order.state_desc,
+    createTime: new Date(order.create_time),
+    planStartTime: new Date(order.plan_start_time),
+    endTime: new Date(order.end_time),
+    totalTime: order.total_time,
+    campaignBudget: order.campaign_budget,
+    actualPay: order.actual_pay,
+    actualRefund: order.actual_refund,
+    consume: order.consume || 0,
+    totalDiscount: order.total_discount,
+    impression: order.impression || 0,
+    read: order.read || 0,
+    likes: order.likes || 0,
+    comments: order.comments || 0,
+    favorite: order.favorite || 0,
+    follow: order.follow || 0,
+    homepageView: order.homepage_view || 0,
+    cpa: order.cpa || 0,
+    convCntMin: order.conv_cnt_min,
+    convCntMax: order.conv_cnt_max,
+    advertiseTarget: order.advertise_target,
+    advertiseTargetDesc: order.advertise_target_desc,
+    smartTarget: order.smart_target,
+    giftMode: order.gift_mode,
+    multiNote: order.multi_note,
+    targetInfo: order.target_info,
+    notes: order.notes,
+    canHeat: order.can_heat,
+    cantHeatDesc: order.cant_heat_desc,
+    payChannel: order.pay_channel,
+    payChannelDesc: order.pay_channel_desc,
+    discountMode: order.discount_mode,
+    discountInfo: order.discount_info,
+    syncedAt: now,
+    updatedAt: now,
+  }
+}
+
+/**
+ * 批量更新或插入订单到数据库
+ */
+async function upsertOrdersToDB(
+  orders: ChipsOrderItem[],
+  accountObjId: ObjectId,
+  now: Date
+): Promise<{ inserted: number; updated: number }> {
+  const db = await getDb()
+  const ordersCollection = db.collection<Order>(COLLECTIONS.ORDERS)
+
+  let updated = 0
+  let inserted = 0
+
+  for (const order of orders) {
+    const existing = await ordersCollection.findOne({
+      accountId: accountObjId,
+      orderNo: order.order_no,
+    })
+
+    const orderDoc = convertOrderToDBFormat(order, accountObjId, now)
+
+    if (existing) {
+      await ordersCollection.updateOne(
+        { _id: existing._id },
+        { $set: orderDoc }
+      )
+      updated++
+    } else {
+      await ordersCollection.insertOne({
+        _id: new ObjectId(),
+        ...orderDoc,
+      } as Order)
+      inserted++
+    }
+  }
+
+  return { inserted, updated }
+}
+
+// ============================================
+// 主函数
+// ============================================
+
 /**
  * 同步账号的所有订单（从聚光平台获取并保存到数据库）
  */
 export async function syncOrders(accountId: string): Promise<SyncOrdersResult> {
   try {
-    const db = await getDb()
-
-    // 获取账号信息（包含 cookie）
-    const account = await db
-      .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
-      .findOne({ _id: new ObjectId(accountId) })
-
-    if (!account) {
-      return { success: false, error: '账号不存在' }
+    const validation = await validateAccountForSync(accountId)
+    if (!validation.success) {
+      return { success: false, error: validation.error }
     }
 
-    if (!account.cookie) {
-      return { success: false, error: '账号未配置登录凭证' }
-    }
-
-    if (account.status === 'cookie_expired') {
-      return { success: false, error: 'Cookie 已过期，请重新登录' }
-    }
-
+    const { account } = validation
     const accountObjId = new ObjectId(accountId)
     const now = new Date()
-    const allOrders: ChipsOrderItem[] = []
-    let page = 1
-    const pageSize = 20
-    let hasMore = true
 
-    // 遍历所有分页获取全部订单
-    while (hasMore) {
-      const result = await queryChipsOrders(account.cookie, {
-        page,
-        page_size: pageSize,
-      })
-
-      if (result.list.length === 0) {
-        hasMore = false
-        break
-      }
-
-      allOrders.push(...result.list)
-
-      // 检查是否还有更多
-      if (page * pageSize >= result.total) {
-        hasMore = false
-      } else {
-        page++
-        // 防止请求过快
-        await new Promise(resolve => setTimeout(resolve, 200))
-      }
-    }
-
-    // 批量更新或插入到数据库
-    let updated = 0
-    let inserted = 0
-    const ordersCollection = db.collection<Order>(COLLECTIONS.ORDERS)
-
-    for (const order of allOrders) {
-      const existing = await ordersCollection.findOne({
-        accountId: accountObjId,
-        orderNo: order.order_no,
-      })
-
-      const orderDoc: Omit<Order, '_id'> = {
-        accountId: accountObjId,
-        orderNo: order.order_no,
-        state: order.state,
-        stateDesc: order.state_desc,
-        createTime: new Date(order.create_time),
-        planStartTime: new Date(order.plan_start_time),
-        endTime: new Date(order.end_time),
-        totalTime: order.total_time,
-        campaignBudget: order.campaign_budget,
-        actualPay: order.actual_pay,
-        actualRefund: order.actual_refund,
-        consume: order.consume || 0,
-        totalDiscount: order.total_discount,
-        impression: order.impression || 0,
-        read: order.read || 0,
-        likes: order.likes || 0,
-        comments: order.comments || 0,
-        favorite: order.favorite || 0,
-        follow: order.follow || 0,
-        homepageView: order.homepage_view || 0,
-        cpa: order.cpa || 0,
-        convCntMin: order.conv_cnt_min,
-        convCntMax: order.conv_cnt_max,
-        advertiseTarget: order.advertise_target,
-        advertiseTargetDesc: order.advertise_target_desc,
-        smartTarget: order.smart_target,
-        giftMode: order.gift_mode,
-        multiNote: order.multi_note,
-        targetInfo: order.target_info,
-        notes: order.notes,
-        canHeat: order.can_heat,
-        cantHeatDesc: order.cant_heat_desc,
-        payChannel: order.pay_channel,
-        payChannelDesc: order.pay_channel_desc,
-        discountMode: order.discount_mode,
-        discountInfo: order.discount_info,
-        syncedAt: now,
-        updatedAt: now,
-      }
-
-      if (existing) {
-        // 更新现有记录
-        await ordersCollection.updateOne(
-          { _id: existing._id },
-          { $set: orderDoc }
-        )
-        updated++
-      } else {
-        // 插入新记录
-        await ordersCollection.insertOne({
-          _id: new ObjectId(),
-          ...orderDoc,
-        } as Order)
-        inserted++
-      }
-    }
+    const allOrders = await fetchAllRemoteOrders(account.cookie!)
+    const { inserted, updated } = await upsertOrdersToDB(allOrders, accountObjId, now)
 
     revalidatePath(`/accounts/${accountId}`)
 

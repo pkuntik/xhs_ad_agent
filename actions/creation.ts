@@ -73,18 +73,19 @@ export async function generateContent(
       // JSON 解析失败，返回原始文本
       return { success: true, rawText }
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('生成内容失败:', error)
 
     // 处理常见错误
-    if (error?.status === 401) {
+    const errorObj = error as { status?: number; message?: string }
+    if (errorObj?.status === 401) {
       return { success: false, error: 'API Key 认证失败，请检查配置' }
     }
-    if (error?.status === 429) {
+    if (errorObj?.status === 429) {
       return { success: false, error: '请求过于频繁，请稍后重试' }
     }
 
-    return { success: false, error: error.message || '生成失败，请重试' }
+    return { success: false, error: errorObj?.message || '生成失败，请重试' }
   }
 }
 
@@ -218,7 +219,22 @@ ${context?.topic || '通用内容'}
       return { success: false, error: `图片生成失败: ${response.status}` }
     }
 
-    const data: any = await response.json()
+    const data = await response.json() as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            imageUrl?: string
+            url?: string
+            image_url?: string
+            inlineData?: { mimeType?: string; data?: string }
+          }>
+        }
+      }>
+      imageUrl?: string
+      image_url?: string
+      url?: string
+      generations?: Array<{ imageUrl?: string; url?: string }>
+    }
 
     // 提取图片 URL
     let imageUrl = null
@@ -252,9 +268,10 @@ ${context?.topic || '通用内容'}
     }
 
     return { success: true, imageUrl }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('图片生成失败:', error)
-    return { success: false, error: error.message || '图片生成失败' }
+    const message = error instanceof Error ? error.message : '图片生成失败'
+    return { success: false, error: message }
   }
 }
 

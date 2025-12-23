@@ -10,12 +10,20 @@ import type { DeliveryLog, DeliveryDecision } from '@/types/delivery-log'
 import { getCurrentUserId } from '@/lib/auth/session'
 import { deductBalance } from '@/lib/billing/service'
 import { ChipsAdvertiseTarget } from '@/lib/xhs/api/campaign'
+import {
+  BUDGET,
+  BID,
+  CHECK_INTERVAL,
+  THRESHOLD,
+  MANAGED_DELIVERY,
+  TIME,
+} from '@/lib/constants/delivery'
 
 // 默认阈值配置
 const DEFAULT_THRESHOLDS: AccountThresholds = {
-  minConsumption: 100,
-  maxCostPerLead: 50,
-  maxFailRetries: 3,
+  minConsumption: THRESHOLD.MIN_CONSUMPTION,
+  maxCostPerLead: THRESHOLD.MAX_COST_PER_LEAD,
+  maxFailRetries: MANAGED_DELIVERY.MAX_RETRIES,
 }
 
 /**
@@ -86,8 +94,8 @@ export async function startDelivery(
     }
 
     const cookie = account.cookie
-    const budget = options?.budget ?? 2000
-    const bidAmount = options?.bidAmount ?? account.defaultBidAmount ?? 30
+    const budget = options?.budget ?? BUDGET.DEFAULT
+    const bidAmount = options?.bidAmount ?? account.defaultBidAmount ?? BID.DEFAULT_AMOUNT
 
     // 调用小红书 API 创建投放计划
     let xhsResult: { campaignId: string; unitId: string }
@@ -144,7 +152,7 @@ export async function startDelivery(
       campaignId: result.insertedId,
       status: 'pending',
       priority: 2,
-      scheduledAt: new Date(Date.now() + 30 * 60 * 1000),
+      scheduledAt: new Date(Date.now() + CHECK_INTERVAL.SHORT * TIME.MINUTE_MS),
       params: { minConsumption: (account.thresholds ?? DEFAULT_THRESHOLDS).minConsumption },
       retryCount: 0,
       maxRetries: 3,
@@ -254,7 +262,7 @@ export async function checkAndDecide(
     logEntry.decisionReason = '消耗未达到检查阈值，继续监控'
 
     await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
-    await scheduleNextCheck(db, campaignId, 30)
+    await scheduleNextCheck(db, campaignId, CHECK_INTERVAL.SHORT)
 
     return { decision: 'continue', reason: '消耗未达到检查阈值' }
   }
@@ -265,7 +273,7 @@ export async function checkAndDecide(
     logEntry.decisionReason = `效果达标（成本 ${costPerLead.toFixed(2)} <= ${(account.thresholds ?? DEFAULT_THRESHOLDS).maxCostPerLead}），继续投放`
 
     await db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
-    await scheduleNextCheck(db, campaignId, 60)
+    await scheduleNextCheck(db, campaignId, CHECK_INTERVAL.LONG)
 
     // 重置失败次数
     await db.collection(COLLECTIONS.WORKS).updateOne(
@@ -359,7 +367,7 @@ export async function checkAndDecide(
     campaignId: campaign._id,
     status: 'pending',
     priority: 1,
-    scheduledAt: new Date(Date.now() + 5 * 60 * 1000),
+    scheduledAt: new Date(Date.now() + CHECK_INTERVAL.QUICK * TIME.MINUTE_MS),
     params: {},
     retryCount: 0,
     maxRetries: 3,
@@ -385,7 +393,7 @@ async function scheduleNextCheck(db: Db, campaignId: string, minutesLater: numbe
       campaignId: new ObjectId(campaignId),
       status: 'pending',
       priority: 2,
-      scheduledAt: new Date(Date.now() + minutesLater * 60 * 1000),
+      scheduledAt: new Date(Date.now() + minutesLater * TIME.MINUTE_MS),
       params: {},
       retryCount: 0,
       maxRetries: 3,
@@ -498,7 +506,7 @@ export async function resumeDelivery(
     )
 
     // 创建效果检查任务
-    await scheduleNextCheck(db, campaignId, 30)
+    await scheduleNextCheck(db, campaignId, CHECK_INTERVAL.SHORT)
 
     return { success: true }
   } catch (error) {
@@ -516,12 +524,12 @@ import type { DeliveryConfig, DeliveryStats, DeliveryStatus, Publication } from 
 // 默认托管配置
 const DEFAULT_DELIVERY_CONFIG: DeliveryConfig = {
   enabled: false,
-  budget: 75,                   // 75元
-  duration: 21600,              // 6小时
-  checkThreshold1: 60,
-  checkThreshold2: 120,
-  minAttempts: 3,
-  minSuccessRate: 30,
+  budget: BUDGET.MANAGED_DEFAULT,
+  duration: MANAGED_DELIVERY.DEFAULT_DURATION,
+  checkThreshold1: THRESHOLD.CHECK_STAGE_1,
+  checkThreshold2: THRESHOLD.CHECK_STAGE_2,
+  minAttempts: MANAGED_DELIVERY.MIN_ATTEMPTS,
+  minSuccessRate: MANAGED_DELIVERY.MIN_SUCCESS_RATE,
 }
 
 // 初始投放统计
@@ -849,10 +857,10 @@ interface ReportData {
  */
 function parseCheckParams(params: Record<string, unknown>): CheckParams {
   return {
-    checkThreshold1: (params.checkThreshold1 as number) || 60,
-    checkThreshold2: (params.checkThreshold2 as number) || 120,
-    minAttempts: (params.minAttempts as number) || 3,
-    minSuccessRate: (params.minSuccessRate as number) || 30,
+    checkThreshold1: (params.checkThreshold1 as number) || THRESHOLD.CHECK_STAGE_1,
+    checkThreshold2: (params.checkThreshold2 as number) || THRESHOLD.CHECK_STAGE_2,
+    minAttempts: (params.minAttempts as number) || MANAGED_DELIVERY.MIN_ATTEMPTS,
+    minSuccessRate: (params.minSuccessRate as number) || MANAGED_DELIVERY.MIN_SUCCESS_RATE,
   }
 }
 
@@ -984,7 +992,7 @@ async function handleStage1Check(
     logEntry.decisionReason = `阶段1有效：${reportData.leads}个咨询`
 
     await ctx.db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
-    await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, 60)
+    await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, CHECK_INTERVAL.LONG)
 
     return { decision: 'continue', reason: '阶段1：有咨询，继续投放' }
   }
@@ -993,7 +1001,7 @@ async function handleStage1Check(
   logEntry.decisionReason = '阶段1无咨询，等待阶段2检查'
 
   await ctx.db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
-  await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, 30)
+  await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, CHECK_INTERVAL.SHORT)
 
   return { decision: 'continue', reason: '阶段1：无咨询，等待阶段2' }
 }
@@ -1063,7 +1071,7 @@ async function handleEffectiveStage2(
     successfulAttempts: ctx.stats.successfulAttempts + 1,
   })
 
-  await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, 60)
+  await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, CHECK_INTERVAL.LONG)
 
   return { decision: 'continue', reason: '阶段2：有效果，继续投放' }
 }
@@ -1207,7 +1215,7 @@ export async function checkManagedCampaign(
     logEntry.checkStage = 1
 
     await ctx.db.collection(COLLECTIONS.DELIVERY_LOGS).insertOne(logEntry)
-    await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, 30)
+    await scheduleManagedCheck(ctx.db, campaignId, workId, publicationIndex, params, CHECK_INTERVAL.SHORT)
 
     return { decision: 'continue', reason: '消耗未达到检查阈值' }
   }
@@ -1270,7 +1278,7 @@ async function scheduleManagedCheck(
       publicationIndex,
       status: 'pending',
       priority: 2,
-      scheduledAt: new Date(Date.now() + minutesLater * 60 * 1000),
+      scheduledAt: new Date(Date.now() + minutesLater * TIME.MINUTE_MS),
       params,
       retryCount: 0,
       maxRetries: 3,
@@ -1414,7 +1422,7 @@ async function processOnePublication(
         noteId: publication.noteId!,
         advertiseTarget: ChipsAdvertiseTarget.PRIVATE_MESSAGE,
         budget: config.budget * 100,  // 元转分
-        totalTime: config.duration || 21600,
+        totalTime: config.duration || MANAGED_DELIVERY.DEFAULT_DURATION,
         planStartTime: 0,
         smartTarget: 0,
       },
@@ -1438,7 +1446,7 @@ async function processOnePublication(
       name: `托管投放 - ${publication.noteDetail?.title || publication.noteId}`,
       objective: 'lead_collection',
       budget: config.budget,
-      duration: config.duration || 21600,
+      duration: config.duration || MANAGED_DELIVERY.DEFAULT_DURATION,
       targeting: {},
       status: 'active',
       currentBatch: stats.currentAttempt + 1,

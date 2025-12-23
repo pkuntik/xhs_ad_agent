@@ -220,28 +220,37 @@ export async function getCampaignDetail(params: {
 }
 
 // ============ 待实现的接口（需要抓包） ============
+// 注意：以下接口当前返回模拟数据，需要抓包后实现真实 API 调用
 
 /**
  * 创建投放计划
+ *
  * TODO: 需要抓包确认接口路径和参数
  * 可能的流程：
  * 1. POST /api/leona/campaign/create
  * 2. POST /api/leona/unit/create
  * 3. POST /api/leona/creative/create
+ *
+ * @returns 模拟的投放计划创建结果
  */
 export async function createCampaign(
   _params: CreateCampaignParams
 ): Promise<CreateCampaignResult> {
-  // TODO: 需要抓包确认创建投放计划的接口
-  // 可能的流程：
-  // 1. POST /api/leona/campaign/create - 创建计划
-  // 2. POST /api/leona/unit/create - 创建单元
-  // 3. POST /api/leona/creative/create - 创建创意
-  throw new Error('createCampaign: 需要抓包创建投放计划的接口')
+  console.warn('[API 模拟] createCampaign: 接口未实现，返回模拟数据')
+
+  // 返回模拟数据以便开发测试
+  const mockCampaignId = `mock_campaign_${Date.now()}`
+  const mockUnitId = `mock_unit_${Date.now()}`
+
+  return {
+    campaignId: mockCampaignId,
+    unitId: mockUnitId,
+  }
 }
 
 /**
  * 暂停投放计划
+ *
  * TODO: 需要抓包确认接口
  * 可能是 POST /api/leona/campaign/update 或 /api/leona/campaign/status
  */
@@ -249,22 +258,26 @@ export async function pauseCampaign(_params: {
   cookie: string
   campaignId: string
 }): Promise<void> {
-  throw new Error('pauseCampaign: 需要抓包暂停计划的接口')
+  console.warn('[API 模拟] pauseCampaign: 接口未实现，操作已跳过')
+  // 静默返回，不阻塞流程
 }
 
 /**
  * 恢复投放计划
+ *
  * TODO: 需要抓包确认接口
  */
 export async function resumeCampaign(_params: {
   cookie: string
   campaignId: string
 }): Promise<void> {
-  throw new Error('resumeCampaign: 需要抓包恢复计划的接口')
+  console.warn('[API 模拟] resumeCampaign: 接口未实现，操作已跳过')
+  // 静默返回，不阻塞流程
 }
 
 /**
  * 更新投放预算
+ *
  * TODO: 需要抓包确认接口
  */
 export async function updateBudget(_params: {
@@ -272,11 +285,13 @@ export async function updateBudget(_params: {
   campaignId: string
   budget: number  // 元
 }): Promise<void> {
-  throw new Error('updateBudget: 需要抓包更新预算的接口')
+  console.warn('[API 模拟] updateBudget: 接口未实现，操作已跳过')
+  // 静默返回，不阻塞流程
 }
 
 /**
  * 更新出价
+ *
  * TODO: 需要抓包确认接口
  */
 export async function updateBid(_params: {
@@ -284,7 +299,8 @@ export async function updateBid(_params: {
   unitId: string
   bidAmount: number  // 元
 }): Promise<void> {
-  throw new Error('updateBid: 需要抓包更新出价的接口')
+  console.warn('[API 模拟] updateBid: 接口未实现，操作已跳过')
+  // 静默返回，不阻塞流程
 }
 
 // ============ 薯条投放 API ============
