@@ -159,7 +159,6 @@ export function useImageGenerator(options: UseImageGeneratorOptions) {
     if (initialPrompt) {
       setGeneratedPrompt(initialPrompt)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialImageUrl, initialPrompt])
 
   // 清理 blob URLs
