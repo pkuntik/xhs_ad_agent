@@ -1354,6 +1354,20 @@ async function processOnePublication(
   const workId = work._id.toString()
 
   try {
+    // 检查是否在休息期（频率限制后的冷却时间）
+    if (publication.deliveryPausedUntil) {
+      const pausedUntil = new Date(publication.deliveryPausedUntil)
+      if (pausedUntil > new Date()) {
+        const remainingMinutes = Math.ceil((pausedUntil.getTime() - Date.now()) / 60000)
+        return {
+          workId,
+          publicationIndex,
+          action: 'skipped',
+          error: `休息中，${remainingMinutes}分钟后继续`,
+        }
+      }
+    }
+
     // 获取账号信息
     const account = await db
       .collection<XhsAccount>(COLLECTIONS.ACCOUNTS)
@@ -1484,6 +1498,7 @@ async function processOnePublication(
           [`publications.${publicationIndex}.deliveryStats.totalAttempts`]: stats.totalAttempts + 1,
           [`publications.${publicationIndex}.deliveryStats.currentAttempt`]: stats.currentAttempt + 1,
           [`publications.${publicationIndex}.deliveryStats.lastAttemptAt`]: new Date(),
+          [`publications.${publicationIndex}.deliveryPausedUntil`]: null, // 清除休息状态
           updatedAt: new Date(),
         },
       }
@@ -1511,12 +1526,55 @@ async function processOnePublication(
       orderNo: chipsResult.orderNo,
     }
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
     console.error(`处理 Publication ${workId}/${publicationIndex} 失败:`, error)
+
+    // 检测频率限制错误，设置休息时间
+    const isRateLimitError = errorMessage.includes('频次') ||
+                             errorMessage.includes('频繁') ||
+                             errorMessage.includes('300013')
+
+    if (isRateLimitError) {
+      // 频率限制，休息30分钟
+      const pauseUntil = new Date(Date.now() + 30 * 60 * 1000)
+      await db.collection(COLLECTIONS.WORKS).updateOne(
+        { _id: work._id },
+        {
+          $set: {
+            [`publications.${publicationIndex}.deliveryPausedUntil`]: pauseUntil,
+            updatedAt: new Date(),
+          },
+        }
+      )
+      console.log(`[托管投放] ${workId}/${publicationIndex} 遇到频率限制，休息到 ${pauseUntil.toLocaleString()}`)
+    }
+
+    // 记录失败任务到数据库，便于追踪
+    try {
+      await db.collection(COLLECTIONS.TASKS).insertOne({
+        type: 'create_campaign',
+        accountId: new ObjectId(publication.accountId!),
+        workId: work._id,
+        publicationIndex,
+        status: 'failed',
+        priority: 1,
+        scheduledAt: new Date(),
+        startedAt: new Date(),
+        completedAt: new Date(),
+        error: errorMessage,
+        retryCount: 0,
+        maxRetries: 0,
+        createdAt: new Date(),
+      })
+    } catch (dbError) {
+      console.error('记录失败任务到数据库失败:', dbError)
+    }
+
     return {
       workId,
       publicationIndex,
       action: 'error',
-      error: error instanceof Error ? error.message : '未知错误',
+      error: isRateLimitError ? `${errorMessage}（休息30分钟）` : errorMessage,
     }
   }
 }

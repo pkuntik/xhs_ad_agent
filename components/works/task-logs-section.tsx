@@ -2,9 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Activity,
   Clock,
   Loader2,
@@ -38,6 +41,8 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   pause_campaign: '暂停投放',
   restart_campaign: '重启投放',
 }
+
+const PAGE_SIZE = 10
 
 function formatDateTime(dateStr: string): string {
   return new Date(dateStr).toLocaleString('zh-CN', {
@@ -109,9 +114,10 @@ export function TaskLogsSection({
   isExpanded: initialExpanded = false,
 }: TaskLogsSectionProps) {
   const [expanded, setExpanded] = useState(initialExpanded)
-  const [tasks, setTasks] = useState<TaskItem[]>([])
+  const [allTasks, setAllTasks] = useState<TaskItem[]>([])
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     if (expanded && !loaded) {
@@ -122,9 +128,10 @@ export function TaskLogsSection({
   async function loadTasks() {
     setLoading(true)
     try {
-      const result = await getPublicationTaskLogs(workId, publicationIndex, 15)
+      // 加载更多数据用于分页
+      const result = await getPublicationTaskLogs(workId, publicationIndex, 100)
       if (result.success && result.tasks) {
-        setTasks(result.tasks)
+        setAllTasks(result.tasks)
       }
       setLoaded(true)
     } finally {
@@ -132,9 +139,14 @@ export function TaskLogsSection({
     }
   }
 
+  // 分页计算
+  const totalPages = Math.ceil(allTasks.length / PAGE_SIZE)
+  const startIdx = (page - 1) * PAGE_SIZE
+  const tasks = allTasks.slice(startIdx, startIdx + PAGE_SIZE)
+
   // 统计待执行和执行中的任务
-  const pendingCount = tasks.filter((t) => t.status === 'pending').length
-  const runningCount = tasks.filter((t) => t.status === 'running').length
+  const pendingCount = allTasks.filter((t) => t.status === 'pending').length
+  const runningCount = allTasks.filter((t) => t.status === 'running').length
 
   return (
     <div className="border-t border-purple-100">
@@ -145,9 +157,9 @@ export function TaskLogsSection({
         <span className="flex items-center gap-1.5">
           <Activity className="h-3.5 w-3.5" />
           运行日志
-          {tasks.length > 0 && (
+          {allTasks.length > 0 && (
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-              {tasks.length}
+              {allTasks.length}
             </Badge>
           )}
           {runningCount > 0 && (
@@ -180,59 +192,90 @@ export function TaskLogsSection({
               暂无运行日志
             </div>
           ) : (
-            <div className="space-y-1.5">
-              {tasks.map((task) => (
-                <div
-                  key={task._id}
-                  className={`rounded p-2 text-xs border ${
-                    task.status === 'running'
-                      ? 'bg-blue-50 border-blue-100'
-                      : task.status === 'failed'
-                        ? 'bg-red-50 border-red-100'
-                        : task.status === 'pending'
-                          ? 'bg-yellow-50 border-yellow-100'
-                          : 'bg-gray-50 border-gray-100'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">
-                        {TASK_TYPE_LABELS[task.type] || task.type}
+            <>
+              <div className="space-y-1.5">
+                {tasks.map((task) => (
+                  <div
+                    key={task._id}
+                    className={`rounded p-2 text-xs border ${
+                      task.status === 'running'
+                        ? 'bg-blue-50 border-blue-100'
+                        : task.status === 'failed'
+                          ? 'bg-red-50 border-red-100'
+                          : task.status === 'pending'
+                            ? 'bg-yellow-50 border-yellow-100'
+                            : 'bg-gray-50 border-gray-100'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">
+                          {TASK_TYPE_LABELS[task.type] || task.type}
+                        </span>
+                        <StatusBadge status={task.status} />
+                      </div>
+                      <span className="text-muted-foreground flex items-center gap-0.5">
+                        <Clock className="h-3 w-3" />
+                        {formatRelativeTime(task.completedAt || task.startedAt || task.scheduledAt)}
                       </span>
-                      <StatusBadge status={task.status} />
                     </div>
-                    <span className="text-muted-foreground flex items-center gap-0.5">
-                      <Clock className="h-3 w-3" />
-                      {formatRelativeTime(task.completedAt || task.startedAt || task.scheduledAt)}
-                    </span>
+
+                    {/* 显示执行结果摘要 */}
+                    {task.result && 'decision' in task.result && (
+                      <div className="mt-1 text-muted-foreground">
+                        决策: <span className="text-foreground">{String(task.result.decision)}</span>
+                        {'reason' in task.result && Boolean(task.result.reason) && (
+                          <span> - {String(task.result.reason)}</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 显示错误信息 */}
+                    {task.error && (
+                      <div className="mt-1 text-red-600">
+                        错误: {task.error}
+                      </div>
+                    )}
+
+                    {/* 显示计划执行时间（对于待执行任务） */}
+                    {task.status === 'pending' && (
+                      <div className="mt-1 text-muted-foreground">
+                        计划时间: {formatDateTime(task.scheduledAt)}
+                      </div>
+                    )}
                   </div>
+                ))}
+              </div>
 
-                  {/* 显示执行结果摘要 */}
-                  {task.result && 'decision' in task.result && (
-                    <div className="mt-1 text-muted-foreground">
-                      决策: <span className="text-foreground">{String(task.result.decision)}</span>
-                      {'reason' in task.result && Boolean(task.result.reason) && (
-                        <span> - {String(task.result.reason)}</span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 显示错误信息 */}
-                  {task.error && (
-                    <div className="mt-1 text-red-600">
-                      错误: {task.error}
-                    </div>
-                  )}
-
-                  {/* 显示计划执行时间（对于待执行任务） */}
-                  {task.status === 'pending' && (
-                    <div className="mt-1 text-muted-foreground">
-                      计划时间: {formatDateTime(task.scheduledAt)}
-                    </div>
-                  )}
+              {/* 分页控制 */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-3 pt-2 border-t">
+                  <span className="text-[10px] text-muted-foreground">
+                    第 {page}/{totalPages} 页，共 {allTasks.length} 条
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      disabled={page === 1}
+                      onClick={() => setPage(page - 1)}
+                    >
+                      <ChevronLeft className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      disabled={page === totalPages}
+                      onClick={() => setPage(page + 1)}
+                    >
+                      <ChevronRight className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
       )}

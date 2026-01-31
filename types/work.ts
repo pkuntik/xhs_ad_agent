@@ -123,4 +123,5 @@ export interface Publication {
   deliveryStats?: DeliveryStats   // 投放统计
   deliveryStatus?: DeliveryStatus // 投放状态
   currentCampaignId?: string      // 当前投放计划 ID
+  deliveryPausedUntil?: Date      // 投放暂停到（频率限制时休息）
 }

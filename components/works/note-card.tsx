@@ -37,6 +37,7 @@ import {
   Rocket,
   PauseCircle,
   StopCircle,
+  Timer,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { syncNoteData, deletePublication } from '@/actions/note'
@@ -114,6 +115,15 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
   const deliveryStatus = publication.deliveryStatus || 'idle'
   const isDeliveryEnabled = deliveryConfig?.enabled || false
   const isDeliveryRunning = deliveryStatus === 'running'
+
+  // 检查是否在休息期
+  const deliveryPausedUntil = publication.deliveryPausedUntil
+    ? new Date(publication.deliveryPausedUntil)
+    : null
+  const isResting = deliveryPausedUntil && deliveryPausedUntil > new Date()
+  const restingMinutes = isResting
+    ? Math.ceil((deliveryPausedUntil.getTime() - Date.now()) / 60000)
+    : 0
 
   async function handleSync() {
     setSyncing(true)
@@ -484,10 +494,16 @@ export function NoteCard({ publication, workId, index, onRefresh, onDelete }: No
                 <span className="text-sm font-medium">托管投放</span>
               </div>
               {/* 状态徽章 */}
-              {deliveryStatus === 'running' && (
+              {deliveryStatus === 'running' && !isResting && (
                 <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100">
                   <Rocket className="h-3 w-3 mr-1" />
                   投放中
+                </Badge>
+              )}
+              {deliveryStatus === 'running' && isResting && (
+                <Badge variant="secondary" className="bg-amber-100 text-amber-700">
+                  <Timer className="h-3 w-3 mr-1" />
+                  休息中 ({restingMinutes}分钟)
                 </Badge>
               )}
               {deliveryStatus === 'paused' && (

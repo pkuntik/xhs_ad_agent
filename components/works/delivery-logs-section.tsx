@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import {
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Zap,
   Eye,
@@ -42,6 +44,8 @@ interface DeliveryLogsSectionProps {
   publicationIndex: number
   isExpanded?: boolean
 }
+
+const PAGE_SIZE = 5
 
 function formatDateTime(dateStr: string): string {
   return new Date(dateStr).toLocaleString('zh-CN', {
@@ -100,9 +104,10 @@ export function DeliveryLogsSection({
   isExpanded: initialExpanded = false,
 }: DeliveryLogsSectionProps) {
   const [expanded, setExpanded] = useState(initialExpanded)
-  const [logs, setLogs] = useState<DeliveryLog[]>([])
+  const [allLogs, setAllLogs] = useState<DeliveryLog[]>([])
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     if (expanded && !loaded) {
@@ -113,15 +118,21 @@ export function DeliveryLogsSection({
   async function loadLogs() {
     setLoading(true)
     try {
-      const result = await getPublicationDeliveryLogs(workId, publicationIndex, 10)
+      // 加载更多数据用于分页
+      const result = await getPublicationDeliveryLogs(workId, publicationIndex, 100)
       if (result.success && result.logs) {
-        setLogs(result.logs)
+        setAllLogs(result.logs)
       }
       setLoaded(true)
     } finally {
       setLoading(false)
     }
   }
+
+  // 分页计算
+  const totalPages = Math.ceil(allLogs.length / PAGE_SIZE)
+  const startIdx = (page - 1) * PAGE_SIZE
+  const logs = allLogs.slice(startIdx, startIdx + PAGE_SIZE)
 
   return (
     <div className="border-t border-purple-100">
@@ -132,9 +143,9 @@ export function DeliveryLogsSection({
         <span className="flex items-center gap-1.5">
           <Clock className="h-3.5 w-3.5" />
           投放日志
-          {logs.length > 0 && (
+          {allLogs.length > 0 && (
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-              {logs.length}
+              {allLogs.length}
             </Badge>
           )}
         </span>
@@ -157,87 +168,105 @@ export function DeliveryLogsSection({
               暂无投放日志
             </div>
           ) : (
-            <div className="space-y-2">
-              {logs.map((log) => (
-                <div
-                  key={log._id}
-                  className={`rounded-lg p-2.5 text-xs ${
-                    log.isEffective
-                      ? 'bg-green-50 border border-green-100'
-                      : 'bg-gray-50 border border-gray-100'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-muted-foreground">
-                      {formatDateTime(log.createdAt)}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <StageBadge stage={log.checkStage} />
-                      <DecisionBadge decision={log.decision} />
+            <>
+              <div className="space-y-2">
+                {logs.map((log) => (
+                  <div
+                    key={log._id}
+                    className={`rounded-lg p-2.5 text-xs ${
+                      log.isEffective
+                        ? 'bg-green-50 border border-green-100'
+                        : 'bg-gray-50 border border-gray-100'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-muted-foreground">
+                        {formatDateTime(log.createdAt)}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <StageBadge stage={log.checkStage} />
+                        <DecisionBadge decision={log.decision} />
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-5 gap-2 text-center">
-                    <div>
-                      <div className="flex items-center justify-center gap-0.5 text-muted-foreground">
-                        <Zap className="h-3 w-3" />
-                        消耗
+                    <div className="grid grid-cols-5 gap-2 text-center">
+                      <div>
+                        <div className="flex items-center justify-center gap-0.5 text-muted-foreground">
+                          <Zap className="h-3 w-3" />
+                          消耗
+                        </div>
+                        <div className="font-medium">¥{log.spent.toFixed(0)}</div>
                       </div>
-                      <div className="font-medium">¥{log.spent.toFixed(0)}</div>
+                      <div>
+                        <div className="flex items-center justify-center gap-0.5 text-muted-foreground">
+                          <Eye className="h-3 w-3" />
+                          展现
+                        </div>
+                        <div className="font-medium">{log.impressions}</div>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-center gap-0.5 text-muted-foreground">
+                          <MousePointerClick className="h-3 w-3" />
+                          点击
+                        </div>
+                        <div className="font-medium">{log.clicks}</div>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-center gap-0.5 text-muted-foreground">
+                          <MessageCircle className="h-3 w-3" />
+                          咨询
+                        </div>
+                        <div className="font-medium">{log.leads}</div>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-center gap-0.5 text-muted-foreground">
+                          <UserPlus className="h-3 w-3" />
+                          加粉
+                        </div>
+                        <div className={`font-medium ${log.hasFollower ? 'text-green-600' : ''}`}>
+                          {log.hasFollower ? '✓' : '-'}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="flex items-center justify-center gap-0.5 text-muted-foreground">
-                        <Eye className="h-3 w-3" />
-                        展现
-                      </div>
-                      <div className="font-medium">{log.impressions}</div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-center gap-0.5 text-muted-foreground">
-                        <MousePointerClick className="h-3 w-3" />
-                        点击
-                      </div>
-                      <div className="font-medium">{log.clicks}</div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-center gap-0.5 text-muted-foreground">
-                        <MessageCircle className="h-3 w-3" />
-                        咨询
-                      </div>
-                      <div className="font-medium">{log.leads}</div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-center gap-0.5 text-muted-foreground">
-                        <UserPlus className="h-3 w-3" />
-                        加粉
-                      </div>
-                      <div className={`font-medium ${log.hasFollower ? 'text-green-600' : ''}`}>
-                        {log.hasFollower ? '✓' : '-'}
-                      </div>
-                    </div>
-                  </div>
 
-                  {log.decisionReason && (
-                    <div className="mt-1.5 pt-1.5 border-t border-gray-200 text-muted-foreground">
-                      {log.decisionReason}
-                    </div>
-                  )}
+                    {log.decisionReason && (
+                      <div className="mt-1.5 pt-1.5 border-t border-gray-200 text-muted-foreground">
+                        {log.decisionReason}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* 分页控制 */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-3 pt-2 border-t">
+                  <span className="text-[10px] text-muted-foreground">
+                    第 {page}/{totalPages} 页，共 {allLogs.length} 条
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      disabled={page === 1}
+                      onClick={() => setPage(page - 1)}
+                    >
+                      <ChevronLeft className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      disabled={page === totalPages}
+                      onClick={() => setPage(page + 1)}
+                    >
+                      <ChevronRight className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
-              ))}
-
-              {logs.length >= 10 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full text-xs"
-                  onClick={() => {
-                    // 可以扩展为加载更多
-                  }}
-                >
-                  查看更多日志
-                </Button>
               )}
-            </div>
+            </>
           )}
         </div>
       )}
